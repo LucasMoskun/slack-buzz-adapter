@@ -1,5 +1,6 @@
 import { SlackBuzzAdapter } from "./adapter.js";
 import { BuzzClient } from "./buzz-client.js";
+import { resolveChannelRoutes } from "./channel-routes.js";
 import { loadConfig, redactConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { SlackClient } from "./slack-client.js";
@@ -21,44 +22,13 @@ async function main() {
   try {
     await stateStore.load();
 
-    const [auth, channelResponse, buzzChannel] = await Promise.all([
-      slackClient.authTest(),
-      slackClient.channelInfo(config.slackChannelId),
-      buzzClient.channelInfo(config.buzzChannelId),
-    ]);
-    if (!buzzChannel?.channel_id) {
-      throw new Error(
-        "The Buzz publishing identity cannot access BUZZ_CHANNEL_ID",
-      );
-    }
-
-    const evidenceChannel = channelResponse.channel ?? {};
-    if (evidenceChannel.is_im || evidenceChannel.is_mpim) {
-      throw new Error(
-        "SLACK_CHANNEL_ID must identify a public or private channel, never a DM or multi-person DM",
-      );
-    }
-    const memberUserIds = await slackClient.channelMembers(
-      config.slackChannelId,
-    );
-    if (
-      evidenceChannel.is_private &&
-      config.copilotSlackUserId &&
-      !memberUserIds.includes(config.copilotSlackUserId)
-    ) {
-      throw new Error(
-        "The configured copilot human is not a member of the private evidence channel",
-      );
-    }
-    await stateStore.recordConversation(config.slackChannelId, {
+    const auth = await slackClient.authTest();
+    const channelRoutes = await resolveChannelRoutes({
+      config,
+      slackClient,
+      buzzClient,
       workspaceId: auth.team_id,
-      channelId: config.slackChannelId,
-      name: evidenceChannel.name || config.slackChannelId,
-      audience: evidenceChannel.is_private
-        ? "private_channel"
-        : "public_channel",
-      memberUserIds,
-      capturedAt: new Date().toISOString(),
+      stateStore,
     });
 
     let runtimeConfig = config;
@@ -86,8 +56,6 @@ async function main() {
       });
     }
 
-    const channelName =
-      channelResponse.channel?.name || config.slackChannelId;
     const adapter = new SlackBuzzAdapter({
       config: runtimeConfig,
       slackClient,
@@ -95,11 +63,8 @@ async function main() {
       stateStore,
       logger,
       workspaceUrl: auth.url,
-      channelName,
       workspaceId: auth.team_id,
-      evidenceAudience: evidenceChannel.is_private
-        ? "private_channel"
-        : "public_channel",
+      channelRoutes,
     });
 
     const socketMode = new SlackSocketMode({
@@ -117,8 +82,7 @@ async function main() {
 
     logger.info("Adapter ready", {
       slackWorkspace: auth.team,
-      slackChannel: channelName,
-      buzzChannelId: config.buzzChannelId,
+      mappedChannels: channelRoutes.length,
     });
     await socketMode.start();
   } finally {

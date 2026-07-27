@@ -1,6 +1,7 @@
 import { SlackBuzzAdapter } from "./adapter.js";
 import { runBackfill } from "./backfill-service.js";
 import { BuzzClient } from "./buzz-client.js";
+import { resolveChannelRoutes } from "./channel-routes.js";
 import { loadConfig, redactConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { SlackClient } from "./slack-client.js";
@@ -21,26 +22,14 @@ async function main() {
 
   try {
     await stateStore.load();
-    const [auth, channelResponse, buzzChannel] = await Promise.all([
-      slackClient.authTest(),
-      slackClient.channelInfo(config.slackChannelId),
-      buzzClient.channelInfo(config.buzzChannelId),
-    ]);
-    if (!buzzChannel?.channel_id) {
-      throw new Error(
-        "The Buzz publishing identity cannot access BUZZ_CHANNEL_ID",
-      );
-    }
-    const channelName =
-      channelResponse.channel?.name || config.slackChannelId;
-    if (
-      channelResponse.channel?.is_im ||
-      channelResponse.channel?.is_mpim
-    ) {
-      throw new Error(
-        "SLACK_CHANNEL_ID must identify a public or private channel, never a DM or multi-person DM",
-      );
-    }
+    const auth = await slackClient.authTest();
+    const channelRoutes = await resolveChannelRoutes({
+      config,
+      slackClient,
+      buzzClient,
+      workspaceId: auth.team_id,
+      stateStore,
+    });
     const adapter = new SlackBuzzAdapter({
       config,
       slackClient,
@@ -48,31 +37,36 @@ async function main() {
       stateStore,
       logger,
       workspaceUrl: auth.url,
-      channelName,
       workspaceId: auth.team_id,
-      evidenceAudience: channelResponse.channel?.is_private
-        ? "private_channel"
-        : "public_channel",
+      channelRoutes,
     });
 
-    const stats = await runBackfill({
-      adapter,
-      slackClient,
-      channelId: config.slackChannelId,
-      teamId: auth.team_id,
-      oldest: config.backfillOldest,
-      logger,
-    });
+    const channels = [];
+    for (const route of channelRoutes) {
+      const stats = await runBackfill({
+        adapter,
+        slackClient,
+        channelId: route.slackChannelId,
+        teamId: auth.team_id,
+        oldest: config.backfillOldest,
+        logger,
+      });
+      channels.push({
+        slackChannelId: route.slackChannelId,
+        slackChannelName: route.slackChannelName,
+        buzzChannelId: route.buzzChannelId,
+        ...stats,
+      });
+    }
 
     console.log(
       JSON.stringify(
         {
           ok: true,
           slackWorkspace: auth.team,
-          slackChannel: channelName,
-          buzzChannelId: config.buzzChannelId,
           oldest: config.backfillOldest || "all accessible history",
-          ...stats,
+          channels,
+          totals: sumStats(channels),
         },
         null,
         2,
@@ -81,6 +75,24 @@ async function main() {
   } finally {
     await stateStore.releaseLock();
   }
+}
+
+function sumStats(channels) {
+  const fields = [
+    "fetched",
+    "created",
+    "existing",
+    "ignored",
+    "duplicate",
+    "historyPages",
+    "threadPages",
+  ];
+  return Object.fromEntries(
+    fields.map((field) => [
+      field,
+      channels.reduce((sum, channel) => sum + channel[field], 0),
+    ]),
+  );
 }
 
 main().catch((error) => {

@@ -6,7 +6,7 @@ import {
 } from "../src/scope-policy.js";
 
 const CONFIG = {
-  slackChannelId: "C1",
+  channelMappingsBySlackId: new Map([["C1", {}]]),
   copilotSlackDmId: "D-COPILOT",
   copilotSlackUserId: "U1",
 };

@@ -53,3 +53,54 @@ test("reads a bounded copilot conversation", async () => {
     "50",
   ]);
 });
+
+test("creates private mirror channels and manages their members", async () => {
+  const calls = [];
+  const responses = [
+    { accepted: true, channel_id: "buzz-1" },
+    [{ pubkey: "a".repeat(64), role: "owner" }],
+    { accepted: true },
+  ];
+  const client = new BuzzClient({
+    runner: async (executable, args) => {
+      calls.push({ executable, args });
+      return JSON.stringify(responses.shift());
+    },
+  });
+
+  const created = await client.createPrivateChannel(
+    "slack-alpha",
+    "Read-only mirror",
+  );
+  const members = await client.channelMembers("buzz-1");
+  await client.addChannelMember(
+    "buzz-1",
+    "b".repeat(64),
+    "bot",
+  );
+
+  assert.equal(created.channel_id, "buzz-1");
+  assert.equal(members[0].role, "owner");
+  assert.deepEqual(calls[0].args, [
+    "channels",
+    "create",
+    "--name",
+    "slack-alpha",
+    "--type",
+    "stream",
+    "--visibility",
+    "private",
+    "--description",
+    "Read-only mirror",
+  ]);
+  assert.deepEqual(calls[2].args, [
+    "channels",
+    "add-member",
+    "--channel",
+    "buzz-1",
+    "--pubkey",
+    "b".repeat(64),
+    "--role",
+    "bot",
+  ]);
+});

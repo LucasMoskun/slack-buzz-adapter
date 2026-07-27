@@ -19,9 +19,8 @@ export class SlackBuzzAdapter {
     stateStore,
     logger,
     workspaceUrl,
-    channelName,
     workspaceId,
-    evidenceAudience = "private_channel",
+    channelRoutes,
   }) {
     this.config = config;
     this.slackClient = slackClient;
@@ -29,9 +28,10 @@ export class SlackBuzzAdapter {
     this.stateStore = stateStore;
     this.logger = logger;
     this.workspaceUrl = workspaceUrl;
-    this.channelName = channelName;
     this.workspaceId = workspaceId;
-    this.evidenceAudience = evidenceAudience;
+    this.channelRoutes = new Map(
+      channelRoutes.map((route) => [route.slackChannelId, route]),
+    );
     this.queue = Promise.resolve();
   }
 
@@ -99,6 +99,13 @@ export class SlackBuzzAdapter {
     const author = actor.displayName;
     const permalink = slackPermalink(this.workspaceUrl, channel, message.ts);
     const isCopilot = scope === SlackMessageScope.COPILOT;
+    const route = isCopilot
+      ? undefined
+      : this.channelRoutes.get(channel);
+    if (!isCopilot && !route) {
+      if (eventId) await this.stateStore.markEvent(eventId);
+      return "ignored";
+    }
     const content = isCopilot
       ? formatCopilotMessage({
           adapterLabel: this.config.adapterLabel,
@@ -110,19 +117,21 @@ export class SlackBuzzAdapter {
       : formatMirroredMessage({
           adapterLabel: this.config.adapterLabel,
           author,
-          channelName: this.channelName,
+          channelName: route.slackChannelName,
           message,
           permalink,
         });
     const source = {
       workspaceId,
       channelId: channel,
-      channelType: isCopilot ? "im" : this.evidenceAudience,
+      channelType: isCopilot ? "im" : route.evidenceAudience,
       slackUserId: message.user || null,
       messageTimestamp: message.ts,
       permalink,
       scope,
-      audience: isCopilot ? "personal_copilot" : this.evidenceAudience,
+      audience: isCopilot
+        ? "personal_copilot"
+        : route.evidenceAudience,
     };
 
     if (existing) {
@@ -151,7 +160,7 @@ export class SlackBuzzAdapter {
 
     const destinationChannelId = isCopilot
       ? this.config.copilotBuzzChannelId
-      : this.config.buzzChannelId;
+      : route.buzzChannelId;
     const result = await this.buzzClient.sendMessage(
       destinationChannelId,
       content,

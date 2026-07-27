@@ -49,8 +49,7 @@ async function createHarness(configOverrides = {}) {
   };
   const adapter = new SlackBuzzAdapter({
     config: {
-      slackChannelId: "C1",
-      buzzChannelId: "buzz-1",
+      channelMappingsBySlackId: new Map([["C1", {}]]),
       adapterLabel: "Slack mirror",
       ...configOverrides,
     },
@@ -59,9 +58,16 @@ async function createHarness(configOverrides = {}) {
     stateStore,
     logger: createLogger(),
     workspaceUrl: "https://demo.slack.com",
-    channelName: "demo",
     workspaceId: "T1",
-    evidenceAudience: "private_channel",
+    channelRoutes: [
+      {
+        slackChannelId: "C1",
+        slackChannelName: "demo",
+        buzzChannelId: "buzz-1",
+        buzzChannelName: "slack-demo",
+        evidenceAudience: "private_channel",
+      },
+    ],
   });
   return { adapter, sends, edits, stateStore };
 }
@@ -92,6 +98,34 @@ test("mirrors a message exactly once", async () => {
   assert.equal(sends.length, 1);
   assert.match(sends[0].content, /Ada/);
   assert.match(sends[0].content, /Hello Buzz/);
+});
+
+test("routes different Slack channels to their mapped Buzz channels", async () => {
+  const { adapter, sends } = await createHarness();
+  adapter.config.channelMappingsBySlackId.set("C2", {});
+  adapter.channelRoutes.set("C2", {
+    slackChannelId: "C2",
+    slackChannelName: "second",
+    buzzChannelId: "buzz-2",
+    evidenceAudience: "public_channel",
+  });
+
+  await adapter.processPayload(
+    payload("EvSecond", {
+      type: "message",
+      channel: "C2",
+      user: "U1",
+      ts: "200.000001",
+      text: "Second channel",
+    }),
+  );
+
+  assert.equal(sends[0].channelId, "buzz-2");
+  assert.match(sends[0].content, /#second/);
+  assert.equal(
+    adapter.stateStore.getMessage("C2:200.000001").source.audience,
+    "public_channel",
+  );
 });
 
 test("maps Slack thread replies to the mirrored Buzz parent", async () => {

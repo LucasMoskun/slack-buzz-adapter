@@ -57,6 +57,46 @@ export class BuzzClient {
     return JSON.parse(output);
   }
 
+  async createPrivateChannel(name, description) {
+    const output = await this.runner(this.executable, [
+      "channels",
+      "create",
+      "--name",
+      name,
+      "--type",
+      "stream",
+      "--visibility",
+      "private",
+      "--description",
+      description,
+    ]);
+    return JSON.parse(output);
+  }
+
+  async channelMembers(channelId) {
+    const output = await this.runner(this.executable, [
+      "channels",
+      "members",
+      "--channel",
+      channelId,
+    ]);
+    return JSON.parse(output);
+  }
+
+  async addChannelMember(channelId, pubkey, role) {
+    const output = await this.runner(this.executable, [
+      "channels",
+      "add-member",
+      "--channel",
+      channelId,
+      "--pubkey",
+      pubkey,
+      "--role",
+      role,
+    ]);
+    return JSON.parse(output);
+  }
+
   async sendMessage(channelId, content, replyTo) {
     const args = [
       "messages",

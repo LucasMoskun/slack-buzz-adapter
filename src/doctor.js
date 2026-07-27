@@ -1,4 +1,5 @@
 import { BuzzClient } from "./buzz-client.js";
+import { resolveChannelRoutes } from "./channel-routes.js";
 import { loadConfig, redactConfig } from "./config.js";
 import { SlackClient } from "./slack-client.js";
 
@@ -10,17 +11,16 @@ async function main() {
   });
   const buzz = new BuzzClient({ executable: config.buzzCli });
 
-  const [auth, channel, socket, buzzChannel] = await Promise.all([
+  const [auth, socket] = await Promise.all([
     slack.authTest(),
-    slack.channelInfo(config.slackChannelId),
     slack.openSocket(),
-    buzz.channelInfo(config.buzzChannelId),
   ]);
-  if (!buzzChannel?.channel_id) {
-    throw new Error(
-      "The Buzz publishing identity cannot access BUZZ_CHANNEL_ID",
-    );
-  }
+  const channelRoutes = await resolveChannelRoutes({
+    config,
+    slackClient: slack,
+    buzzClient: buzz,
+    workspaceId: auth.team_id,
+  });
 
   const report = {
     ok: true,
@@ -29,41 +29,25 @@ async function main() {
       workspace: auth.team,
       workspaceId: auth.team_id,
       botUserId: auth.user_id,
-      channel: channel.channel?.name,
-      channelId: channel.channel?.id,
-      isPrivate: channel.channel?.is_private,
-      isDirectMessage: Boolean(channel.channel?.is_im),
-      isMultiPersonDirectMessage: Boolean(channel.channel?.is_mpim),
       socketMode: Boolean(socket.url),
     },
-    buzz: {
-      channelId: config.buzzChannelId,
-      channelName: buzzChannel.name,
-      visibility: buzzChannel.visibility,
-    },
+    channelMappings: channelRoutes.map((route) => ({
+      slackChannelId: route.slackChannelId,
+      slackChannelName: route.slackChannelName,
+      audience: route.evidenceAudience,
+      slackMemberCount: route.memberUserIds.length,
+      buzzChannelId: route.buzzChannelId,
+      buzzChannelName: route.buzzChannelName,
+    })),
   };
-  if (channel.channel?.is_im || channel.channel?.is_mpim) {
-    throw new Error(
-      "SLACK_CHANNEL_ID must identify a public or private channel, never a DM or multi-person DM",
-    );
-  }
   if (config.copilotSlackUserId) {
-    const [members, directMessage, copilotBuzzChannel] = await Promise.all([
-      slack.channelMembers(config.slackChannelId),
+    const [directMessage, copilotBuzzChannel] = await Promise.all([
       slack.openDirectMessage(config.copilotSlackUserId),
       buzz.channelInfo(config.copilotBuzzChannelId),
     ]);
     if (!copilotBuzzChannel?.channel_id) {
       throw new Error(
         "The Buzz publishing identity cannot access COPILOT_BUZZ_CHANNEL_ID",
-      );
-    }
-    if (
-      channel.channel?.is_private &&
-      !members.includes(config.copilotSlackUserId)
-    ) {
-      throw new Error(
-        "The configured copilot human is not a member of the private evidence channel",
       );
     }
     report.copilot = {

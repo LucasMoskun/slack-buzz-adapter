@@ -27,7 +27,7 @@ export function classifySlackMessage(config, event) {
     return SlackMessageScope.EXCLUDED_DM;
   }
 
-  if (channelId === config.slackChannelId) {
+  if (config.channelMappingsBySlackId?.has(channelId)) {
     return SlackMessageScope.EVIDENCE;
   }
 

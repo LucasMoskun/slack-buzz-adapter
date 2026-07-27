@@ -74,6 +74,35 @@ export class SlackClient {
     });
   }
 
+  async listConversations({
+    types = "public_channel,private_channel",
+    excludeArchived = true,
+  } = {}) {
+    const channels = [];
+    let cursor;
+    do {
+      const page = await this.call(
+        "conversations.list",
+        this.botToken,
+        compactParameters({
+          types,
+          exclude_archived: String(excludeArchived),
+          cursor,
+          limit: "200",
+        }),
+      );
+      channels.push(...(page.channels ?? []));
+      cursor = page.response_metadata?.next_cursor?.trim() || undefined;
+    } while (cursor);
+    return channels;
+  }
+
+  joinChannel(channelId) {
+    return this.call("conversations.join", this.botToken, {
+      channel: channelId,
+    });
+  }
+
   channelHistory(channelId, { cursor, oldest, limit = 200 } = {}) {
     return this.call(
       "conversations.history",

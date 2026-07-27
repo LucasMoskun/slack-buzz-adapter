@@ -76,6 +76,53 @@ test("calls Slack history and replies with cursor pagination parameters", async 
   ]);
 });
 
+test("paginates source inventory and joins a public channel", async () => {
+  const requests = [];
+  const responses = [
+    {
+      ok: true,
+      channels: [{ id: "C1" }],
+      response_metadata: { next_cursor: "next" },
+    },
+    {
+      ok: true,
+      channels: [{ id: "G1" }],
+      response_metadata: { next_cursor: "" },
+    },
+    { ok: true, channel: { id: "C1", is_member: true } },
+  ];
+  const client = new SlackClient({
+    botToken: "xoxb-test",
+    appToken: "xapp-test",
+    fetchImpl: async (url, options) => {
+      requests.push({
+        url,
+        parameters: Object.fromEntries(new URLSearchParams(options.body)),
+      });
+      return response(200, responses.shift());
+    },
+  });
+
+  const channels = await client.listConversations();
+  await client.joinChannel("C1");
+
+  assert.deepEqual(
+    channels.map((channel) => channel.id),
+    ["C1", "G1"],
+  );
+  assert.deepEqual(requests[0].parameters, {
+    types: "public_channel,private_channel",
+    exclude_archived: "true",
+    limit: "200",
+  });
+  assert.equal(requests[1].parameters.cursor, "next");
+  assert.equal(
+    requests[2].url,
+    "https://slack.com/api/conversations.join",
+  );
+  assert.deepEqual(requests[2].parameters, { channel: "C1" });
+});
+
 test("opens the app DM, posts as the app, and paginates channel members", async () => {
   const requests = [];
   const responses = [

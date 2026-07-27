@@ -1,14 +1,15 @@
 # Slack → Buzz Adapter
 
-A small, dependency-free Node.js adapter that mirrors messages from one approved
-Slack channel into one private Buzz channel. It also includes an optional
+A small, dependency-free Node.js adapter that mirrors explicitly mapped Slack
+channels into one private Buzz channel each. It also includes an optional
 one-human copilot pilot with a dedicated Slack App Home DM, a private Buzz
 copilot channel, and automatic private reply delivery back to Slack.
 
-This first milestone is intentionally narrow and testable:
+The current milestone is explicit and testable:
 
 - Slack Events API over Socket Mode
-- one explicit Slack channel → Buzz channel mapping
+- an audited one-to-one Slack channel → Buzz channel mapping file
+- idempotent public-channel enrollment and private Buzz mirror creation
 - paginated historical backfill, including thread replies
 - new messages and known-parent thread replies
 - edits and deletion markers
@@ -27,7 +28,7 @@ and tools.
 - Node.js 22 or newer
 - the `buzz` CLI installed and available on `PATH`
 - a Slack Pro demo workspace where you can create and install an internal app
-- a private Buzz stream channel
+- permission to create private Buzz stream channels
 
 No npm packages are required.
 
@@ -41,47 +42,21 @@ No npm packages are required.
 6. Under **Basic Information → App-Level Tokens**, create a token with the
    `connections:write` scope. This is the `xapp-…` token.
 7. Copy the bot token from **OAuth & Permissions**. This is the `xoxb-…` token.
-8. Add **Buzz Copilot** to the Slack channel you want to test. Private channels
-   require an explicit invitation.
+8. Private channels always require an explicit invitation. Public channels are
+   joined by `npm run sync-channels`.
 
 The app requests channel history/metadata, user-profile reads, access to its own
 one-to-one App Home conversations, and ordinary app-authored message delivery.
-It does **not** request `mpim:history`, subscribe to `message.mpim`, request user
+It requests `channels:join` so reconciliation can enroll public channels. It
+does **not** request `mpim:history`, subscribe to `message.mpim`, request user
 tokens, or request `chat:write.customize`.
 
 If the app was installed from an earlier version of the manifest, update the
-manifest and reinstall it so Slack grants `im:history`, `im:write`, and
-`chat:write`, enables the App Home messages tab, and subscribes to `message.im`.
-Socket Mode means no public webhook endpoint is required.
+manifest and reinstall it so Slack grants `channels:join`, `im:history`,
+`im:write`, and `chat:write`, enables the App Home messages tab, and subscribes
+to `message.im`. Socket Mode means no public webhook endpoint is required.
 
-## 2. Create the Buzz mirror channel
-
-Run this with the Buzz identity that should publish mirrored messages:
-
-```bash
-buzz --relay https://endcorp.communities.buzz.xyz channels create --name slack-demo-mirror --type stream --visibility private --description "Read-only mirror of the Slack demo channel"
-```
-
-Save the returned `channel_id`. Add Andrew and the selected research copilot to
-the private channel through Buzz.
-
-For the pilot, create a second private stream channel for the copilot inbox:
-
-```bash
-buzz --relay https://endcorp.communities.buzz.xyz channels create --name andrew-research-copilot --type stream --visibility private --description "Private conversation for Andrew's Slack research copilot"
-```
-
-Add Andrew and `Andrew's Research Copilot` to this channel after the
-owner-reviewed agent draft has been saved.
-
-The relay flag is intentionally explicit. Without it (or a configured
-`BUZZ_RELAY_URL`), the CLI defaults to the local development relay at
-`http://localhost:3000`.
-
-The CLI also requires `BUZZ_PRIVATE_KEY` in the terminal environment. Keep that
-key local and never paste it into Slack, Buzz, issue reports, or command output.
-
-## 3. Configure the adapter
+## 2. Configure the adapter
 
 ```bash
 cp .env.example .env
@@ -91,11 +66,16 @@ Set:
 
 - `SLACK_APP_TOKEN`: the `xapp-…` Socket Mode token
 - `SLACK_BOT_TOKEN`: the `xoxb-…` bot token
-- `SLACK_CHANNEL_ID`: the Slack channel ID, not its display name
-- `BUZZ_CHANNEL_ID`: the UUID returned by `buzz channels create`
+- `CHANNEL_MAPPINGS_PATH`: the JSON mapping path; defaults to
+  `channel-mappings.json`
 - `BUZZ_RELAY_URL`: the Buzz relay URL
 - `BUZZ_PRIVATE_KEY`: the Buzz publishing identity
 - `BUZZ_AUTH_TAG`: optional owner attestation, when required by the relay
+- `MIRROR_OWNER_PUBKEY`: the human added as owner to every created mirror
+- `MIRROR_AGENT_PUBKEYS`: comma-separated agents added as bots
+
+For this pilot, `COPILOT_HUMAN_PUBKEY` and `COPILOT_AGENT_PUBKEY` are used as
+fallbacks for the two mirror membership settings.
 
 For the optional copilot route, also set:
 
@@ -114,6 +94,43 @@ Slack channel IDs can be copied from **View channel details → About**.
 Real credentials belong only in `.env`; that file and the runtime state directory
 are ignored by git.
 
+## 3. Reconcile all source channels
+
+```bash
+npm run sync-channels
+```
+
+This command:
+
+1. lists every active public channel and every private channel visible to the
+   app;
+2. joins public channels that the app has not joined;
+3. creates one private Buzz stream for every unmapped Slack source;
+4. grants the configured human owner access and selected agents bot access; and
+5. atomically updates [`channel-mappings.json`](./channel-mappings.json).
+
+The mapping file routes by immutable IDs. Channel names are labels for review
+and are refreshed during reconciliation:
+
+```json
+{
+  "version": 1,
+  "channels": [
+    {
+      "slackChannelId": "C0123456789",
+      "slackChannelName": "project-alpha",
+      "buzzChannelId": "00000000-0000-0000-0000-000000000000",
+      "buzzChannelName": "slack-project-alpha"
+    }
+  ]
+}
+```
+
+Duplicate Slack IDs or duplicate Buzz destinations are rejected. Unmapped
+channels are ignored by the live event processor. On Slack Pro, uninvited
+private channels are not visible to the app; invite **Buzz Copilot** and rerun
+reconciliation.
+
 ## 4. Validate both sides
 
 ```bash
@@ -123,11 +140,11 @@ npm run doctor
 The doctor checks:
 
 - Slack bot authentication
-- access to the configured Slack channel
+- access to every mapped Slack channel
 - Socket Mode app-token authentication
-- access to the configured Buzz channel
+- access to every mapped Buzz channel
 - that the evidence source is a channel rather than a DM/MPIM
-- the configured human's membership when the source is a private channel
+- the configured human's membership in every mapped private source
 - the dedicated App Home DM and private Buzz copilot channel
 
 It prints IDs and channel metadata, never token values.
@@ -140,9 +157,10 @@ Stop `npm start` if it is currently running, then run:
 npm run backfill
 ```
 
-By default this retrieves all history that the Slack app can access in the
-configured channel. It follows Slack cursor pagination, fetches thread replies,
-sorts messages oldest-first, and publishes them into the same Buzz channel.
+By default this retrieves all history that the Slack app can access in every
+mapped channel. It follows Slack cursor pagination, fetches thread replies,
+sorts messages oldest-first, and publishes each source into its mapped Buzz
+channel.
 
 To set a lower bound, add an ISO-8601 date or Slack timestamp to `.env`:
 
@@ -164,9 +182,9 @@ lock. If backfill reports that the state is locked, stop the live adapter with
 npm start
 ```
 
-Send a message in the configured Slack channel. It should appear in the Buzz
-channel with the Slack author, source channel, original timestamp, and a Slack
-permalink.
+Send a message in any mapped Slack channel. It should appear in its Buzz
+destination with the Slack author, source channel, original timestamp, and a
+Slack permalink.
 
 The adapter acknowledges Socket Mode envelopes before processing them. Delivery
 then runs serially and records state in `.data/state.json`. Restarting the process
@@ -206,7 +224,8 @@ duplicate response.
 | Edit | Edits the existing mirrored Buzz message |
 | Delete | Replaces the mirrored content with a deletion marker |
 | Duplicate event | Ignores it using the durable event receipt |
-| Different channel | Ignores it |
+| Mapped public/private channel | Routes it to its one-to-one Buzz destination |
+| Unmapped channel | Ignores it |
 | Configured human → Buzz Copilot App DM | Mirrors into the private Buzz copilot inbox |
 | Any other one-to-one DM | Rejects before event receipt, storage, logging, or inference |
 | Any multi-person DM | Rejects before event receipt, storage, logging, or inference |
@@ -224,16 +243,18 @@ npm test
 npm run check
 ```
 
-Tests cover configuration redaction, event normalization, message formatting,
-durable state, stable actors, audience ledgers, Buzz CLI argument handling,
-idempotency, threads, edits, deletes, channel filtering, pre-storage DM
-exclusion, exact copilot routing, paired-request identity, citation enforcement,
-delivery deduplication, and Socket Mode acknowledgement order.
+Tests cover mapping validation and reconciliation, configuration redaction,
+multi-channel routing, event normalization, message formatting, durable state,
+stable actors, audience ledgers, Buzz CLI argument handling, idempotency,
+threads, edits, deletes, channel filtering, pre-storage DM exclusion, exact
+copilot routing, paired-request identity, citation enforcement, delivery
+deduplication, and Socket Mode acknowledgement order.
 
 ## Security notes
 
-- The mirror process does not post to Slack. The separate copilot worker has the
-  narrow outbound capability.
+- The live mirror process does not post messages to Slack. Reconciliation only
+  joins public source channels; the separate copilot worker has the narrow
+  outbound message capability.
 - Human-to-human DMs are excluded both by Slack permissions and adapter policy.
   The app subscribes only to `message.im`, which covers conversations involving
   the app, and it admits only the configured human and exact App Home DM.
@@ -244,7 +265,7 @@ delivery deduplication, and Socket Mode acknowledgement order.
 - The personal App Home conversation is labelled personal context and must not
   be promoted into shared findings without an explicit share action.
 - A private-channel ledger snapshots member IDs, and startup fails if the pilot
-  human is not entitled to the configured private evidence channel.
+  human is not entitled to any configured private evidence source.
 - Outbound delivery requires a known agent author, a reply to the paired
   human's exact Slack App Home request, a Slack source permalink, and a durable
   once-only receipt.
@@ -253,13 +274,15 @@ delivery deduplication, and Socket Mode acknowledgement order.
 - Runtime state is written with owner-only file permissions.
 - Slack and Buzz credentials are read from environment variables and are never
   logged.
-- Give the Buzz publishing identity access only to the intended private mirror
-  channel.
+- Every mirror is private. Routing uses immutable IDs and rejects duplicate
+  destinations.
+- Public enrollment is explicit through reconciliation. Private sources remain
+  Slack invitation-only and cannot be silently claimed as covered.
 
 ## Next milestones
 
-1. Multiple explicit channel mappings with per-recipient access checks.
-2. Membership change and private-channel revocation events.
-3. Edit/delete-driven invalidation of dependent copilot findings.
-4. Managed private-channel creation and agent membership.
+1. Membership change and private-channel revocation events.
+2. Edit/delete-driven invalidation of dependent copilot findings.
+3. Automatic reconciliation after public channel creation.
+4. Managed private-channel creation.
 5. A separate private `Signals` forum for cited cross-project analysis.

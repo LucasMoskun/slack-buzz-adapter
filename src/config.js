@@ -1,24 +1,35 @@
 import path from "node:path";
+import { loadChannelMappings, mappingIndex } from "./channel-map.js";
 
 const REQUIRED_ENV = [
   "SLACK_APP_TOKEN",
   "SLACK_BOT_TOKEN",
-  "SLACK_CHANNEL_ID",
-  "BUZZ_CHANNEL_ID",
   "BUZZ_PRIVATE_KEY",
 ];
 
-export function loadConfig(env = process.env, cwd = process.cwd()) {
+export function loadConfig(
+  env = process.env,
+  cwd = process.cwd(),
+  { allowMissingMappings = false } = {},
+) {
   const missing = REQUIRED_ENV.filter((name) => !env[name]?.trim());
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
 
+  const channelMappingsPath = path.resolve(
+    cwd,
+    env.CHANNEL_MAPPINGS_PATH?.trim() || "channel-mappings.json",
+  );
+  const channelMappings = loadChannelMappings(channelMappingsPath, {
+    allowMissing: allowMissingMappings,
+  });
   const config = {
     slackAppToken: env.SLACK_APP_TOKEN.trim(),
     slackBotToken: env.SLACK_BOT_TOKEN.trim(),
-    slackChannelId: env.SLACK_CHANNEL_ID.trim(),
-    buzzChannelId: env.BUZZ_CHANNEL_ID.trim(),
+    channelMappingsPath,
+    channelMappings,
+    channelMappingsBySlackId: mappingIndex(channelMappings),
     buzzCli: env.BUZZ_CLI?.trim() || "buzz",
     statePath: path.resolve(cwd, env.STATE_PATH?.trim() || ".data/state.json"),
     adapterLabel: env.ADAPTER_LABEL?.trim() || "Slack mirror",
@@ -37,6 +48,15 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
       env.COPILOT_POLL_INTERVAL_MS,
       10_000,
       "COPILOT_POLL_INTERVAL_MS",
+    ),
+    mirrorOwnerPubkey: parseOptionalPubkey(
+      optional(env.MIRROR_OWNER_PUBKEY) ||
+        optional(env.COPILOT_HUMAN_PUBKEY),
+      "MIRROR_OWNER_PUBKEY",
+    ),
+    mirrorAgentPubkeys: parsePubkeyList(
+      env.MIRROR_AGENT_PUBKEYS,
+      optional(env.COPILOT_AGENT_PUBKEY),
     ),
   };
   const partialCopilot =
@@ -57,8 +77,20 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
 
 export function redactConfig(config) {
   return {
-    slackChannelId: config.slackChannelId,
-    buzzChannelId: config.buzzChannelId,
+    channelMappingsPath: config.channelMappingsPath,
+    channelMappings: config.channelMappings.map(
+      ({
+        slackChannelId,
+        slackChannelName,
+        buzzChannelId,
+        buzzChannelName,
+      }) => ({
+        slackChannelId,
+        slackChannelName,
+        buzzChannelId,
+        buzzChannelName,
+      }),
+    ),
     buzzCli: config.buzzCli,
     statePath: config.statePath,
     adapterLabel: config.adapterLabel,
@@ -95,4 +127,28 @@ function parsePositiveInteger(value, fallback, name) {
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+function parsePubkeyList(value, fallback) {
+  const values = value?.trim()
+    ? value.split(",").map((entry) => entry.trim()).filter(Boolean)
+    : fallback
+      ? [fallback]
+      : [];
+  for (const pubkey of values) {
+    if (!/^[a-f0-9]{64}$/i.test(pubkey)) {
+      throw new Error(
+        "MIRROR_AGENT_PUBKEYS must contain comma-separated 64-character hex pubkeys",
+      );
+    }
+  }
+  return [...new Set(values)];
+}
+
+function parseOptionalPubkey(value, name) {
+  if (!value) return undefined;
+  if (!/^[a-f0-9]{64}$/i.test(value)) {
+    throw new Error(`${name} must be a 64-character hex pubkey`);
+  }
+  return value;
 }

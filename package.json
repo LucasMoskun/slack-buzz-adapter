@@ -3,16 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Mirror messages from one Slack channel into one private Buzz channel.",
+  "description": "Mirror mapped Slack channels into private Buzz channels.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
+    "sync-channels": "node --env-file-if-exists=.env src/sync-channels.js",
     "backfill": "node --env-file-if-exists=.env src/backfill.js",
     "copilot": "node --env-file-if-exists=.env src/copilot.js",
     "doctor": "node --env-file-if-exists=.env src/doctor.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/backfill.js && node --check src/copilot.js && node --check src/doctor.js"
+    "check": "node --check src/index.js && node --check src/sync-channels.js && node --check src/backfill.js && node --check src/copilot.js && node --check src/doctor.js"
   }
 }

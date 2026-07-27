@@ -1,0 +1,131 @@
+import {
+  mappingIndex,
+  saveChannelMappings,
+} from "./channel-map.js";
+
+export async function syncChannelMappings({
+  config,
+  slackClient,
+  buzzClient,
+  logger,
+}) {
+  if (!config.mirrorOwnerPubkey) {
+    throw new Error(
+      "MIRROR_OWNER_PUBKEY or COPILOT_HUMAN_PUBKEY is required to create mirror channels",
+    );
+  }
+
+  const discovered = (await slackClient.listConversations())
+    .filter(
+      (channel) =>
+        channel.id &&
+        !channel.is_archived &&
+        !channel.is_im &&
+        !channel.is_mpim,
+    )
+    .sort((left, right) =>
+      String(left.name || left.id).localeCompare(
+        String(right.name || right.id),
+      ),
+    );
+  let joinedPublicChannels = 0;
+  for (const channel of discovered) {
+    if (!channel.is_private && !channel.is_member) {
+      await slackClient.joinChannel(channel.id);
+      channel.is_member = true;
+      joinedPublicChannels += 1;
+      logger?.info("Joined public Slack source channel", {
+        slackChannelId: channel.id,
+        slackChannelName: channel.name,
+      });
+    }
+  }
+
+  const mappings = [...config.channelMappings];
+  const bySlackId = mappingIndex(mappings);
+  let createdBuzzChannels = 0;
+  let retainedMappings = 0;
+
+  for (const channel of discovered) {
+    let mapping = bySlackId.get(channel.id);
+    if (!mapping) {
+      const buzzName = `slack-${channel.name || channel.id}`.slice(0, 80);
+      const result = await buzzClient.createPrivateChannel(
+        buzzName,
+        `Read-only mirror of Slack #${channel.name || channel.id}`,
+      );
+      if (!result.channel_id) {
+        throw new Error(
+          `Buzz did not return a channel ID for Slack source ${channel.id}`,
+        );
+      }
+      mapping = {
+        slackChannelId: channel.id,
+        slackChannelName: channel.name || channel.id,
+        buzzChannelId: result.channel_id,
+        buzzChannelName: buzzName,
+      };
+      mappings.push(mapping);
+      bySlackId.set(channel.id, mapping);
+      saveChannelMappings(config.channelMappingsPath, mappings);
+      createdBuzzChannels += 1;
+      logger?.info("Created private Buzz mirror channel", mapping);
+    } else {
+      const buzzChannel = await buzzClient.channelInfo(mapping.buzzChannelId);
+      if (!buzzChannel?.channel_id) {
+        throw new Error(
+          `The Buzz publishing identity cannot access mapped channel ${mapping.buzzChannelId}`,
+        );
+      }
+      mapping.slackChannelName = channel.name || mapping.slackChannelName;
+      mapping.buzzChannelName = buzzChannel.name || mapping.buzzChannelName;
+      retainedMappings += 1;
+    }
+
+    await ensureMirrorMembers({
+      buzzClient,
+      buzzChannelId: mapping.buzzChannelId,
+      ownerPubkey: config.mirrorOwnerPubkey,
+      agentPubkeys: config.mirrorAgentPubkeys,
+    });
+  }
+
+  saveChannelMappings(config.channelMappingsPath, mappings);
+  return {
+    discoveredChannels: discovered.length,
+    publicChannels: discovered.filter((channel) => !channel.is_private).length,
+    visiblePrivateChannels: discovered.filter((channel) => channel.is_private)
+      .length,
+    joinedPublicChannels,
+    createdBuzzChannels,
+    retainedMappings,
+    totalMappings: mappings.length,
+    channels: mappings,
+  };
+}
+
+async function ensureMirrorMembers({
+  buzzClient,
+  buzzChannelId,
+  ownerPubkey,
+  agentPubkeys,
+}) {
+  const members = await buzzClient.channelMembers(buzzChannelId);
+  const memberPubkeys = new Set(
+    members.map((member) => member.pubkey).filter(Boolean),
+  );
+  if (!memberPubkeys.has(ownerPubkey)) {
+    await buzzClient.addChannelMember(
+      buzzChannelId,
+      ownerPubkey,
+      "owner",
+    );
+    memberPubkeys.add(ownerPubkey);
+  }
+  for (const pubkey of agentPubkeys) {
+    if (!memberPubkeys.has(pubkey)) {
+      await buzzClient.addChannelMember(buzzChannelId, pubkey, "bot");
+      memberPubkeys.add(pubkey);
+    }
+  }
+}
