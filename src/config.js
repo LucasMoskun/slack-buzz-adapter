@@ -14,7 +14,7 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
 
-  return {
+  const config = {
     slackAppToken: env.SLACK_APP_TOKEN.trim(),
     slackBotToken: env.SLACK_BOT_TOKEN.trim(),
     slackChannelId: env.SLACK_CHANNEL_ID.trim(),
@@ -24,7 +24,35 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
     adapterLabel: env.ADAPTER_LABEL?.trim() || "Slack mirror",
     logLevel: env.LOG_LEVEL?.trim() || "info",
     backfillOldest: parseSlackTimestamp(env.BACKFILL_OLDEST),
+    copilotSlackUserId: optional(env.COPILOT_SLACK_USER_ID),
+    copilotBuzzChannelId: optional(env.COPILOT_BUZZ_CHANNEL_ID),
+    copilotAgentName: optional(env.COPILOT_AGENT_NAME),
+    copilotAgentPubkey: optional(env.COPILOT_AGENT_PUBKEY),
+    copilotApproverPubkey: optional(env.COPILOT_APPROVER_PUBKEY),
+    copilotStatePath: path.resolve(
+      cwd,
+      env.COPILOT_STATE_PATH?.trim() || ".data/copilot-state.json",
+    ),
+    copilotPollIntervalMs: parsePositiveInteger(
+      env.COPILOT_POLL_INTERVAL_MS,
+      10_000,
+      "COPILOT_POLL_INTERVAL_MS",
+    ),
   };
+  const partialCopilot =
+    Boolean(config.copilotSlackUserId) !==
+    Boolean(config.copilotBuzzChannelId);
+  if (partialCopilot) {
+    throw new Error(
+      "COPILOT_SLACK_USER_ID and COPILOT_BUZZ_CHANNEL_ID must be configured together",
+    );
+  }
+  if (config.copilotSlackUserId && !config.copilotAgentName) {
+    throw new Error(
+      "COPILOT_AGENT_NAME is required when the copilot route is enabled",
+    );
+  }
+  return config;
 }
 
 export function redactConfig(config) {
@@ -36,6 +64,9 @@ export function redactConfig(config) {
     adapterLabel: config.adapterLabel,
     logLevel: config.logLevel,
     backfillOldest: config.backfillOldest,
+    copilotEnabled: Boolean(config.copilotSlackUserId),
+    copilotStatePath: config.copilotStatePath,
+    copilotPollIntervalMs: config.copilotPollIntervalMs,
   };
 }
 
@@ -51,4 +82,17 @@ export function parseSlackTimestamp(value) {
     );
   }
   return (milliseconds / 1000).toFixed(6);
+}
+
+function optional(value) {
+  return value?.trim() || undefined;
+}
+
+function parsePositiveInteger(value, fallback, name) {
+  if (!value?.trim()) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }

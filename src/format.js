@@ -65,6 +65,31 @@ export function formatMirroredMessage({
   ].join("\n");
 }
 
+export function formatCopilotMessage({
+  adapterLabel,
+  author,
+  message,
+  permalink,
+  copilotAgentName,
+}) {
+  const timestampMs = Math.floor(Number(message.ts) * 1000);
+  const time = Number.isFinite(timestampMs)
+    ? new Date(timestampMs).toISOString()
+    : "unknown time";
+  const text = message.text?.trim() || describeFiles(message.files);
+  const source = permalink ? ` · [open in Slack](${permalink})` : "";
+
+  return [
+    `@${copilotAgentName} — private request from ${author}`,
+    "",
+    `**${adapterLabel} · private copilot inbox · ${author}** · ${time}${source}`,
+    "",
+    text || "_Message contained no text._",
+    "",
+    "_Personal context: do not promote into shared findings without an explicit share action._",
+  ].join("\n");
+}
+
 function describeFiles(files) {
   if (!Array.isArray(files) || files.length === 0) return "";
   return files

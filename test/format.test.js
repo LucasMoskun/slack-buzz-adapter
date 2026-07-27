@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   formatDeletedMessage,
+  formatCopilotMessage,
   formatMirroredMessage,
   normalizeSlackMessage,
   slackPermalink,
@@ -83,4 +84,19 @@ test("uses file metadata when a Slack message has no text", () => {
   });
 
   assert.match(content, /\[notes\.txt\]\(https:\/\/files\.example\/notes\)/);
+});
+
+test("labels copilot inbox context as personal and non-shareable", () => {
+  const content = formatCopilotMessage({
+    adapterLabel: "Buzz copilot",
+    author: "Ada",
+    message: { ts: "1722070800.123456", text: "Private request" },
+    permalink: "https://demo.slack.com/archives/D1/p1",
+    copilotAgentName: "Ada's Research Copilot",
+  });
+
+  assert.match(content, /private copilot inbox/);
+  assert.match(content, /@Ada's Research Copilot/);
+  assert.match(content, /Private request/);
+  assert.match(content, /do not promote into shared findings/);
 });

@@ -1,10 +1,15 @@
 import {
   formatDeletedMessage,
+  formatCopilotMessage,
   formatMirroredMessage,
   normalizeSlackMessage,
   slackPermalink,
   sourceKey,
 } from "./format.js";
+import {
+  classifySlackMessage,
+  SlackMessageScope,
+} from "./scope-policy.js";
 
 export class SlackBuzzAdapter {
   constructor({
@@ -15,6 +20,8 @@ export class SlackBuzzAdapter {
     logger,
     workspaceUrl,
     channelName,
+    workspaceId,
+    evidenceAudience = "private_channel",
   }) {
     this.config = config;
     this.slackClient = slackClient;
@@ -23,6 +30,8 @@ export class SlackBuzzAdapter {
     this.logger = logger;
     this.workspaceUrl = workspaceUrl;
     this.channelName = channelName;
+    this.workspaceId = workspaceId;
+    this.evidenceAudience = evidenceAudience;
     this.queue = Promise.resolve();
   }
 
@@ -44,6 +53,9 @@ export class SlackBuzzAdapter {
       this.logger.debug("Processing event with differing authorization team");
     }
 
+    const scope = classifySlackMessage(this.config, payload.event);
+    if (scope === SlackMessageScope.EXCLUDED_DM) return "excluded";
+
     const eventId = payload.event_id;
     if (this.stateStore.hasEvent(eventId)) {
       this.logger.debug("Ignored duplicate Slack event", { eventId });
@@ -51,7 +63,7 @@ export class SlackBuzzAdapter {
     }
 
     const normalized = normalizeSlackMessage(payload.event);
-    if (!normalized || normalized.channel !== this.config.slackChannelId) {
+    if (!normalized || scope === SlackMessageScope.IGNORED) {
       if (eventId) await this.stateStore.markEvent(eventId);
       return "ignored";
     }
@@ -60,10 +72,15 @@ export class SlackBuzzAdapter {
       return this.handleDelete(eventId, normalized);
     }
 
-    return this.handleCreateOrEdit(eventId, normalized);
+    return this.handleCreateOrEdit(
+      eventId,
+      normalized,
+      scope,
+      payload.team_id || this.workspaceId,
+    );
   }
 
-  async handleCreateOrEdit(eventId, normalized) {
+  async handleCreateOrEdit(eventId, normalized, scope, workspaceId) {
     const { message, channel, action } = normalized;
     if (!message?.ts) {
       if (eventId) await this.stateStore.markEvent(eventId);
@@ -78,18 +95,35 @@ export class SlackBuzzAdapter {
       return "existing";
     }
 
-    const author =
-      message.bot_profile?.name ||
-      message.username ||
-      (await this.slackClient.userDisplayName(message.user));
+    const actor = await this.resolveActor(workspaceId, message);
+    const author = actor.displayName;
     const permalink = slackPermalink(this.workspaceUrl, channel, message.ts);
-    const content = formatMirroredMessage({
-      adapterLabel: this.config.adapterLabel,
-      author,
-      channelName: this.channelName,
-      message,
+    const isCopilot = scope === SlackMessageScope.COPILOT;
+    const content = isCopilot
+      ? formatCopilotMessage({
+          adapterLabel: this.config.adapterLabel,
+          author,
+          message,
+          permalink,
+          copilotAgentName: this.config.copilotAgentName,
+        })
+      : formatMirroredMessage({
+          adapterLabel: this.config.adapterLabel,
+          author,
+          channelName: this.channelName,
+          message,
+          permalink,
+        });
+    const source = {
+      workspaceId,
+      channelId: channel,
+      channelType: isCopilot ? "im" : this.evidenceAudience,
+      slackUserId: message.user || null,
+      messageTimestamp: message.ts,
       permalink,
-    });
+      scope,
+      audience: isCopilot ? "personal_copilot" : this.evidenceAudience,
+    };
 
     if (existing) {
       await this.buzzClient.editMessage(existing.buzzEventId, content);
@@ -99,8 +133,11 @@ export class SlackBuzzAdapter {
         message: {
           ...existing,
           content,
+          source,
           updatedAt: new Date().toISOString(),
         },
+        actorKey: actor.key,
+        actor,
       });
       this.logger.info("Updated mirrored Slack message", { sourceKey: key });
       return "updated";
@@ -112,8 +149,11 @@ export class SlackBuzzAdapter {
         ?.buzzEventId;
     }
 
+    const destinationChannelId = isCopilot
+      ? this.config.copilotBuzzChannelId
+      : this.config.buzzChannelId;
     const result = await this.buzzClient.sendMessage(
-      this.config.buzzChannelId,
+      destinationChannelId,
       content,
       replyTo,
     );
@@ -125,9 +165,12 @@ export class SlackBuzzAdapter {
       message: {
         buzzEventId: result.event_id,
         content,
+        source,
         slackThreadTs: message.thread_ts || null,
         createdAt: new Date().toISOString(),
       },
+      actorKey: actor.key,
+      actor,
     });
     this.logger.info("Mirrored Slack message", {
       sourceKey: key,
@@ -135,6 +178,33 @@ export class SlackBuzzAdapter {
       threaded: Boolean(replyTo),
     });
     return "created";
+  }
+
+  async resolveActor(workspaceId, message) {
+    if (message.user && this.slackClient.userProfile) {
+      const profile = await this.slackClient.userProfile(message.user);
+      return {
+        key: `${workspaceId || "unknown"}:${message.user}`,
+        workspaceId: workspaceId || null,
+        ...profile,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    const displayName =
+      message.bot_profile?.name ||
+      message.username ||
+      (await this.slackClient.userDisplayName(message.user));
+    const identifier = message.user || message.bot_id || "unknown";
+    return {
+      key: `${workspaceId || "unknown"}:${identifier}`,
+      workspaceId: workspaceId || null,
+      userId: message.user || null,
+      displayName,
+      isBot: Boolean(message.bot_id || message.bot_profile),
+      isGuest: false,
+      isDeleted: false,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async handleDelete(eventId, normalized) {

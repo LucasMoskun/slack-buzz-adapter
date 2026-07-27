@@ -10,8 +10,9 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
     "backfill": "node --env-file-if-exists=.env src/backfill.js",
+    "copilot": "node --env-file-if-exists=.env src/copilot.js",
     "doctor": "node --env-file-if-exists=.env src/doctor.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/backfill.js && node --check src/doctor.js"
+    "check": "node --check src/index.js && node --check src/backfill.js && node --check src/copilot.js && node --check src/doctor.js"
   }
 }

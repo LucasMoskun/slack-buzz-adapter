@@ -21,13 +21,26 @@ async function main() {
 
   try {
     await stateStore.load();
-    const [auth, channelResponse] = await Promise.all([
+    const [auth, channelResponse, buzzChannel] = await Promise.all([
       slackClient.authTest(),
       slackClient.channelInfo(config.slackChannelId),
       buzzClient.channelInfo(config.buzzChannelId),
     ]);
+    if (!buzzChannel?.channel_id) {
+      throw new Error(
+        "The Buzz publishing identity cannot access BUZZ_CHANNEL_ID",
+      );
+    }
     const channelName =
       channelResponse.channel?.name || config.slackChannelId;
+    if (
+      channelResponse.channel?.is_im ||
+      channelResponse.channel?.is_mpim
+    ) {
+      throw new Error(
+        "SLACK_CHANNEL_ID must identify a public or private channel, never a DM or multi-person DM",
+      );
+    }
     const adapter = new SlackBuzzAdapter({
       config,
       slackClient,
@@ -36,6 +49,10 @@ async function main() {
       logger,
       workspaceUrl: auth.url,
       channelName,
+      workspaceId: auth.team_id,
+      evidenceAudience: channelResponse.channel?.is_private
+        ? "private_channel"
+        : "public_channel",
     });
 
     const stats = await runBackfill({

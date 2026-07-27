@@ -103,18 +103,74 @@ export class SlackClient {
 
   async userDisplayName(userId) {
     if (!userId) return "Unknown user";
+    return (await this.userProfile(userId)).displayName;
+  }
+
+  async userProfile(userId) {
+    if (!userId) {
+      return {
+        userId: null,
+        displayName: "Unknown user",
+        isBot: false,
+        isGuest: false,
+        isDeleted: false,
+      };
+    }
     if (this.userCache.has(userId)) return this.userCache.get(userId);
 
     const body = await this.call("users.info", this.botToken, { user: userId });
     const profile = body.user?.profile ?? {};
-    const name =
-      profile.display_name ||
-      profile.real_name ||
-      body.user?.real_name ||
-      body.user?.name ||
-      userId;
-    this.userCache.set(userId, name);
-    return name;
+    const result = {
+      userId,
+      displayName:
+        profile.display_name ||
+        profile.real_name ||
+        body.user?.real_name ||
+        body.user?.name ||
+        userId,
+      isBot: Boolean(body.user?.is_bot),
+      isGuest: Boolean(
+        body.user?.is_restricted || body.user?.is_ultra_restricted,
+      ),
+      isDeleted: Boolean(body.user?.deleted),
+    };
+    this.userCache.set(userId, result);
+    return result;
+  }
+
+  async channelMembers(channelId) {
+    const members = [];
+    let cursor;
+    do {
+      const page = await this.call(
+        "conversations.members",
+        this.botToken,
+        compactParameters({
+          channel: channelId,
+          cursor,
+          limit: "200",
+        }),
+      );
+      members.push(...(page.members ?? []));
+      cursor = page.response_metadata?.next_cursor?.trim() || undefined;
+    } while (cursor);
+    return members;
+  }
+
+  openDirectMessage(userId) {
+    return this.call("conversations.open", this.botToken, {
+      users: userId,
+      return_im: "true",
+    });
+  }
+
+  postMessage(channelId, text) {
+    return this.call("chat.postMessage", this.botToken, {
+      channel: channelId,
+      text,
+      unfurl_links: "false",
+      unfurl_media: "false",
+    });
   }
 }
 

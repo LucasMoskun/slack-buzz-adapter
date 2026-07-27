@@ -21,22 +21,85 @@ async function main() {
   try {
     await stateStore.load();
 
-    const [auth, channelResponse] = await Promise.all([
+    const [auth, channelResponse, buzzChannel] = await Promise.all([
       slackClient.authTest(),
       slackClient.channelInfo(config.slackChannelId),
       buzzClient.channelInfo(config.buzzChannelId),
     ]);
+    if (!buzzChannel?.channel_id) {
+      throw new Error(
+        "The Buzz publishing identity cannot access BUZZ_CHANNEL_ID",
+      );
+    }
+
+    const evidenceChannel = channelResponse.channel ?? {};
+    if (evidenceChannel.is_im || evidenceChannel.is_mpim) {
+      throw new Error(
+        "SLACK_CHANNEL_ID must identify a public or private channel, never a DM or multi-person DM",
+      );
+    }
+    const memberUserIds = await slackClient.channelMembers(
+      config.slackChannelId,
+    );
+    if (
+      evidenceChannel.is_private &&
+      config.copilotSlackUserId &&
+      !memberUserIds.includes(config.copilotSlackUserId)
+    ) {
+      throw new Error(
+        "The configured copilot human is not a member of the private evidence channel",
+      );
+    }
+    await stateStore.recordConversation(config.slackChannelId, {
+      workspaceId: auth.team_id,
+      channelId: config.slackChannelId,
+      name: evidenceChannel.name || config.slackChannelId,
+      audience: evidenceChannel.is_private
+        ? "private_channel"
+        : "public_channel",
+      memberUserIds,
+      capturedAt: new Date().toISOString(),
+    });
+
+    let runtimeConfig = config;
+    if (config.copilotSlackUserId) {
+      const [directMessage, copilotBuzzChannel] = await Promise.all([
+        slackClient.openDirectMessage(config.copilotSlackUserId),
+        buzzClient.channelInfo(config.copilotBuzzChannelId),
+      ]);
+      if (!copilotBuzzChannel?.channel_id) {
+        throw new Error(
+          "The Buzz publishing identity cannot access COPILOT_BUZZ_CHANNEL_ID",
+        );
+      }
+      const copilotSlackDmId = directMessage.channel?.id;
+      if (!copilotSlackDmId) {
+        throw new Error("Slack did not return a copilot App Home DM ID");
+      }
+      runtimeConfig = { ...config, copilotSlackDmId };
+      await stateStore.recordConversation(copilotSlackDmId, {
+        workspaceId: auth.team_id,
+        channelId: copilotSlackDmId,
+        audience: "personal_copilot",
+        memberUserIds: [config.copilotSlackUserId],
+        capturedAt: new Date().toISOString(),
+      });
+    }
 
     const channelName =
       channelResponse.channel?.name || config.slackChannelId;
     const adapter = new SlackBuzzAdapter({
-      config,
+      config: runtimeConfig,
       slackClient,
       buzzClient,
       stateStore,
       logger,
       workspaceUrl: auth.url,
       channelName,
+      workspaceId: auth.team_id,
+      evidenceAudience: evidenceChannel.is_private
+        ? "private_channel"
+        : "public_channel",
     });
 
     const socketMode = new SlackSocketMode({

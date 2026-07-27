@@ -82,4 +82,26 @@ export class BuzzClient {
     ]);
     return JSON.parse(output);
   }
+
+  async getMessages(channelId, limit = 200) {
+    const output = await this.runner(this.executable, [
+      "messages",
+      "get",
+      "--channel",
+      channelId,
+      "--limit",
+      String(limit),
+    ]);
+    return JSON.parse(output);
+  }
+
+  async getReactions(eventId) {
+    const output = await this.runner(this.executable, [
+      "reactions",
+      "get",
+      "--event",
+      eventId,
+    ]);
+    return JSON.parse(output);
+  }
 }

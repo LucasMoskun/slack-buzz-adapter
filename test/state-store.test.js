@@ -60,3 +60,31 @@ test("prevents two processes from owning the same state path", async () => {
   await backfillStore.acquireLock("history backfill");
   await backfillStore.releaseLock();
 });
+
+test("persists actor, audience ledger, and delivery receipts", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "slack-buzz-state-"));
+  const statePath = path.join(directory, "state.json");
+  const store = new JsonStateStore(statePath);
+  await store.load();
+
+  await store.record({
+    actorKey: "T1:U1",
+    actor: { userId: "U1", displayName: "Ada" },
+  });
+  await store.recordConversation("C1", {
+    audience: "private_channel",
+    memberUserIds: ["U1"],
+  });
+  await store.recordDelivery("suggestion-1", {
+    approvalEventId: "approval-1",
+  });
+
+  const reloaded = new JsonStateStore(statePath);
+  await reloaded.load();
+  assert.equal(reloaded.getActor("T1:U1").displayName, "Ada");
+  assert.deepEqual(reloaded.getConversation("C1").memberUserIds, ["U1"]);
+  assert.equal(
+    reloaded.getDelivery("suggestion-1").approvalEventId,
+    "approval-1",
+  );
+});

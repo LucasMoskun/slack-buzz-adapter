@@ -16,6 +16,11 @@ async function main() {
     slack.openSocket(),
     buzz.channelInfo(config.buzzChannelId),
   ]);
+  if (!buzzChannel?.channel_id) {
+    throw new Error(
+      "The Buzz publishing identity cannot access BUZZ_CHANNEL_ID",
+    );
+  }
 
   const report = {
     ok: true,
@@ -27,6 +32,8 @@ async function main() {
       channel: channel.channel?.name,
       channelId: channel.channel?.id,
       isPrivate: channel.channel?.is_private,
+      isDirectMessage: Boolean(channel.channel?.is_im),
+      isMultiPersonDirectMessage: Boolean(channel.channel?.is_mpim),
       socketMode: Boolean(socket.url),
     },
     buzz: {
@@ -35,6 +42,41 @@ async function main() {
       visibility: buzzChannel.visibility,
     },
   };
+  if (channel.channel?.is_im || channel.channel?.is_mpim) {
+    throw new Error(
+      "SLACK_CHANNEL_ID must identify a public or private channel, never a DM or multi-person DM",
+    );
+  }
+  if (config.copilotSlackUserId) {
+    const [members, directMessage, copilotBuzzChannel] = await Promise.all([
+      slack.channelMembers(config.slackChannelId),
+      slack.openDirectMessage(config.copilotSlackUserId),
+      buzz.channelInfo(config.copilotBuzzChannelId),
+    ]);
+    if (!copilotBuzzChannel?.channel_id) {
+      throw new Error(
+        "The Buzz publishing identity cannot access COPILOT_BUZZ_CHANNEL_ID",
+      );
+    }
+    if (
+      channel.channel?.is_private &&
+      !members.includes(config.copilotSlackUserId)
+    ) {
+      throw new Error(
+        "The configured copilot human is not a member of the private evidence channel",
+      );
+    }
+    report.copilot = {
+      enabled: true,
+      slackUserId: config.copilotSlackUserId,
+      slackDirectMessageId: directMessage.channel?.id,
+      buzzChannelId: config.copilotBuzzChannelId,
+      buzzChannelName: copilotBuzzChannel.name,
+      deliveryConfigured: Boolean(
+        config.copilotAgentPubkey && config.copilotApproverPubkey,
+      ),
+    };
+  }
   console.log(JSON.stringify(report, null, 2));
 }
 

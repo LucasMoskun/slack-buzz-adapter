@@ -15,7 +15,7 @@ function createLogger() {
   };
 }
 
-async function createHarness() {
+async function createHarness(configOverrides = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "slack-buzz-adapter-"));
   const stateStore = new JsonStateStore(path.join(directory, "state.json"));
   await stateStore.load();
@@ -34,6 +34,15 @@ async function createHarness() {
     },
   };
   const slackClient = {
+    async userProfile(userId) {
+      return {
+        userId,
+        displayName: userId === "U1" ? "Ada" : userId,
+        isBot: false,
+        isGuest: false,
+        isDeleted: false,
+      };
+    },
     async userDisplayName(userId) {
       return userId === "U1" ? "Ada" : userId;
     },
@@ -43,6 +52,7 @@ async function createHarness() {
       slackChannelId: "C1",
       buzzChannelId: "buzz-1",
       adapterLabel: "Slack mirror",
+      ...configOverrides,
     },
     slackClient,
     buzzClient,
@@ -50,6 +60,8 @@ async function createHarness() {
     logger: createLogger(),
     workspaceUrl: "https://demo.slack.com",
     channelName: "demo",
+    workspaceId: "T1",
+    evidenceAudience: "private_channel",
   });
   return { adapter, sends, edits, stateStore };
 }
@@ -162,4 +174,82 @@ test("ignores messages from unmapped Slack channels", async () => {
 
   assert.equal(sends.length, 0);
   assert.equal(stateStore.hasEvent("EvOther"), true);
+});
+
+test("excludes other DMs before state or message persistence", async () => {
+  const { adapter, sends, stateStore } = await createHarness({
+    copilotSlackUserId: "U1",
+    copilotSlackDmId: "D-COPILOT",
+    copilotBuzzChannelId: "buzz-copilot",
+    copilotAgentName: "Ada's Research Copilot",
+  });
+
+  const result = await adapter.processPayload(
+    payload("EvPrivate", {
+      type: "message",
+      channel: "D-OTHER",
+      channel_type: "im",
+      user: "U1",
+      ts: "100.000001",
+      text: "Never ingest this",
+    }),
+  );
+
+  assert.equal(result, "excluded");
+  assert.equal(sends.length, 0);
+  assert.equal(stateStore.hasEvent("EvPrivate"), false);
+  assert.equal(stateStore.getMessage("D-OTHER:100.000001"), undefined);
+  assert.equal(stateStore.getActor("T1:U1"), undefined);
+});
+
+test("routes the exact human-copilot DM to the private Buzz inbox", async () => {
+  const { adapter, sends, stateStore } = await createHarness({
+    copilotSlackUserId: "U1",
+    copilotSlackDmId: "D-COPILOT",
+    copilotBuzzChannelId: "buzz-copilot",
+    copilotAgentName: "Ada's Research Copilot",
+  });
+
+  const result = await adapter.processPayload(
+    payload("EvCopilot", {
+      type: "message",
+      channel: "D-COPILOT",
+      channel_type: "im",
+      user: "U1",
+      ts: "100.000001",
+      text: "Help me prepare the cited update",
+    }),
+  );
+
+  assert.equal(result, "created");
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].channelId, "buzz-copilot");
+  assert.match(sends[0].content, /private copilot inbox/);
+  assert.match(sends[0].content, /@Ada's Research Copilot/);
+  assert.match(sends[0].content, /do not promote into shared findings/);
+  assert.equal(
+    stateStore.getMessage("D-COPILOT:100.000001").source.audience,
+    "personal_copilot",
+  );
+});
+
+test("records stable actor and audience metadata for evidence", async () => {
+  const { adapter, stateStore } = await createHarness();
+
+  await adapter.processPayload(
+    payload("EvEvidence", {
+      type: "message",
+      channel: "C1",
+      channel_type: "group",
+      user: "U1",
+      ts: "100.000001",
+      text: "Private-channel evidence",
+    }),
+  );
+
+  const stored = stateStore.getMessage("C1:100.000001");
+  assert.equal(stored.source.workspaceId, "T1");
+  assert.equal(stored.source.slackUserId, "U1");
+  assert.equal(stored.source.audience, "private_channel");
+  assert.equal(stateStore.getActor("T1:U1").displayName, "Ada");
 });

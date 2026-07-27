@@ -40,3 +40,39 @@ test("parses ISO dates and Slack timestamps for backfill", () => {
   );
   assert.throws(() => parseSlackTimestamp("last Tuesday"), /BACKFILL_OLDEST/);
 });
+
+test("requires both copilot routing endpoints and redacts identities", () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        ...VALID_ENV,
+        COPILOT_SLACK_USER_ID: "U1",
+      }),
+    /COPILOT_SLACK_USER_ID and COPILOT_BUZZ_CHANNEL_ID/,
+  );
+
+  const config = loadConfig({
+    ...VALID_ENV,
+    COPILOT_SLACK_USER_ID: "U1",
+    COPILOT_BUZZ_CHANNEL_ID: "buzz-copilot",
+    COPILOT_AGENT_NAME: "Ada's Research Copilot",
+    COPILOT_POLL_INTERVAL_MS: "5000",
+  });
+  const redacted = redactConfig(config);
+  assert.equal(config.copilotSlackUserId, "U1");
+  assert.equal(config.copilotPollIntervalMs, 5000);
+  assert.equal(redacted.copilotEnabled, true);
+  assert.equal("copilotSlackUserId" in redacted, false);
+});
+
+test("requires an exact Buzz agent name for copilot mention routing", () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        ...VALID_ENV,
+        COPILOT_SLACK_USER_ID: "U1",
+        COPILOT_BUZZ_CHANNEL_ID: "buzz-copilot",
+      }),
+    /COPILOT_AGENT_NAME/,
+  );
+});

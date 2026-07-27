@@ -30,3 +30,49 @@ test("publishes content over stdin without invoking a shell", async () => {
     options: { input: "hello\n\nworld" },
   });
 });
+
+test("reads a bounded copilot approval queue", async () => {
+  const calls = [];
+  const client = new BuzzClient({
+    executable: "/opt/buzz",
+    runner: async (executable, args) => {
+      calls.push({ executable, args });
+      return JSON.stringify([{ id: "event-1", content: "draft" }]);
+    },
+  });
+
+  const events = await client.getMessages("copilot-channel", 50);
+
+  assert.equal(events[0].id, "event-1");
+  assert.deepEqual(calls[0].args, [
+    "messages",
+    "get",
+    "--channel",
+    "copilot-channel",
+    "--limit",
+    "50",
+  ]);
+});
+
+test("reads approver reactions for a copilot suggestion", async () => {
+  const calls = [];
+  const client = new BuzzClient({
+    executable: "/opt/buzz",
+    runner: async (executable, args) => {
+      calls.push({ executable, args });
+      return JSON.stringify({
+        reactions: [{ emoji: "✅", count: 1, pubkeys: ["approver"] }],
+      });
+    },
+  });
+
+  const result = await client.getReactions("suggestion-1");
+
+  assert.equal(result.reactions[0].emoji, "✅");
+  assert.deepEqual(calls[0].args, [
+    "reactions",
+    "get",
+    "--event",
+    "suggestion-1",
+  ]);
+});

@@ -12,6 +12,9 @@ const EMPTY_STATE = Object.freeze({
   version: 1,
   events: {},
   messages: {},
+  actors: {},
+  conversations: {},
+  deliveries: {},
 });
 
 export class JsonStateStore {
@@ -85,6 +88,9 @@ export class JsonStateStore {
         version: 1,
         events: parsed.events ?? {},
         messages: parsed.messages ?? {},
+        actors: parsed.actors ?? {},
+        conversations: parsed.conversations ?? {},
+        deliveries: parsed.deliveries ?? {},
       };
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
@@ -99,15 +105,48 @@ export class JsonStateStore {
     return this.state.messages[sourceKey];
   }
 
-  async record({ eventId, sourceKey, message }) {
+  getActor(actorKey) {
+    return this.state.actors[actorKey];
+  }
+
+  getConversation(conversationId) {
+    return this.state.conversations[conversationId];
+  }
+
+  getDelivery(eventId) {
+    return this.state.deliveries[eventId];
+  }
+
+  async record({
+    eventId,
+    sourceKey,
+    message,
+    actorKey,
+    actor,
+    conversationId,
+    conversation,
+  }) {
     if (eventId) this.state.events[eventId] = Date.now();
     if (sourceKey && message) this.state.messages[sourceKey] = message;
+    if (actorKey && actor) this.state.actors[actorKey] = actor;
+    if (conversationId && conversation) {
+      this.state.conversations[conversationId] = conversation;
+    }
     this.pruneEvents();
     await this.persist();
   }
 
   async markEvent(eventId) {
     await this.record({ eventId });
+  }
+
+  async recordConversation(conversationId, conversation) {
+    await this.record({ conversationId, conversation });
+  }
+
+  async recordDelivery(eventId, delivery) {
+    this.state.deliveries[eventId] = delivery;
+    await this.persist();
   }
 
   pruneEvents() {

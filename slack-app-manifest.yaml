@@ -1,10 +1,14 @@
 display_information:
-  name: Buzz Mirror Demo
-  description: Mirrors one Slack channel into a private Buzz channel
+  name: Buzz Copilot Pilot
+  description: Mirrors approved Slack channels and hosts private copilot conversations
   background_color: "#2d3139"
 features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Buzz Mirror
+    display_name: Buzz Copilot
     always_online: false
 oauth_config:
   scopes:
@@ -13,12 +17,16 @@ oauth_config:
       - channels:read
       - groups:history
       - groups:read
+      - im:history
+      - im:write
+      - chat:write
       - users:read
 settings:
   event_subscriptions:
     bot_events:
       - message.channels
       - message.groups
+      - message.im
   org_deploy_enabled: false
   socket_mode_enabled: true
   token_rotation_enabled: false
