@@ -76,3 +76,15 @@ test("requires an exact Buzz agent name for copilot mention routing", () => {
     /COPILOT_AGENT_NAME/,
   );
 });
+
+test("loads the paired Buzz human identity for automatic delivery", () => {
+  const config = loadConfig({
+    ...VALID_ENV,
+    COPILOT_SLACK_USER_ID: "U1",
+    COPILOT_BUZZ_CHANNEL_ID: "buzz-copilot",
+    COPILOT_AGENT_NAME: "Ada's Research Copilot",
+    COPILOT_HUMAN_PUBKEY: "b".repeat(64),
+  });
+
+  assert.equal(config.copilotHumanPubkey, "b".repeat(64));
+});

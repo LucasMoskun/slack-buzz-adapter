@@ -28,7 +28,7 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
     copilotBuzzChannelId: optional(env.COPILOT_BUZZ_CHANNEL_ID),
     copilotAgentName: optional(env.COPILOT_AGENT_NAME),
     copilotAgentPubkey: optional(env.COPILOT_AGENT_PUBKEY),
-    copilotApproverPubkey: optional(env.COPILOT_APPROVER_PUBKEY),
+    copilotHumanPubkey: optional(env.COPILOT_HUMAN_PUBKEY),
     copilotStatePath: path.resolve(
       cwd,
       env.COPILOT_STATE_PATH?.trim() || ".data/copilot-state.json",

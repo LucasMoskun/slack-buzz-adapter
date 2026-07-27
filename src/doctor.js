@@ -73,7 +73,7 @@ async function main() {
       buzzChannelId: config.copilotBuzzChannelId,
       buzzChannelName: copilotBuzzChannel.name,
       deliveryConfigured: Boolean(
-        config.copilotAgentPubkey && config.copilotApproverPubkey,
+        config.copilotAgentPubkey && config.copilotHumanPubkey,
       ),
     };
   }

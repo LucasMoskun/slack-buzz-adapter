@@ -9,7 +9,7 @@ async function main() {
   const config = loadConfig();
   requireDeliveryConfig(config);
   const logger = createLogger(config.logLevel);
-  logger.info("Starting approved copilot delivery worker", redactConfig(config));
+  logger.info("Starting automatic copilot delivery worker", redactConfig(config));
 
   const slackClient = new SlackClient({
     botToken: config.slackBotToken,
@@ -22,7 +22,7 @@ async function main() {
   let stopped = false;
   const stop = () => {
     stopped = true;
-    logger.info("Stopping approved copilot delivery worker");
+    logger.info("Stopping automatic copilot delivery worker");
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
@@ -73,7 +73,7 @@ function requireDeliveryConfig(config) {
     ["COPILOT_SLACK_USER_ID", config.copilotSlackUserId],
     ["COPILOT_BUZZ_CHANNEL_ID", config.copilotBuzzChannelId],
     ["COPILOT_AGENT_PUBKEY", config.copilotAgentPubkey],
-    ["COPILOT_APPROVER_PUBKEY", config.copilotApproverPubkey],
+    ["COPILOT_HUMAN_PUBKEY", config.copilotHumanPubkey],
   ]
     .filter(([, value]) => !value)
     .map(([name]) => name);

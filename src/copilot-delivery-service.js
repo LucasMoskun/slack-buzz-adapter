@@ -1,4 +1,3 @@
-const APPROVAL_COMMAND = "/approve";
 const SLACK_CITATION =
   /https:\/\/[^\s)]+\/archives\/[A-Z0-9]+\/p\d+/i;
 
@@ -23,14 +22,9 @@ export class CopilotDeliveryService {
       200,
     );
     const byId = new Map(events.map((event) => [event.id, event]));
-    const replyApprovals = new Map();
-    for (const event of events) {
-      if (!isApproval(event, this.config.copilotApproverPubkey)) continue;
-      replyApprovals.set(replyTarget(event.tags), event);
-    }
     const stats = {
       scanned: events.length,
-      approvals: replyApprovals.size,
+      eligible: 0,
       delivered: 0,
       alreadyDelivered: 0,
       invalid: 0,
@@ -58,54 +52,54 @@ export class CopilotDeliveryService {
         });
         continue;
       }
-      const replyApproval = replyApprovals.get(suggestion.id);
-      const reactionApproval = replyApproval
-        ? false
-        : await this.hasApprovalReaction(suggestion.id);
-      if (!replyApproval && !reactionApproval) continue;
-      if (reactionApproval) stats.approvals += 1;
+      const sourceEvent = byId.get(replyTarget(suggestion.tags));
+      if (
+        !isPairedSlackRequest(sourceEvent, {
+          humanPubkey: this.config.copilotHumanPubkey,
+          slackDmId: this.config.copilotSlackDmId,
+        })
+      ) {
+        stats.invalid += 1;
+        this.logger.warn(
+          "Copilot response is not linked to the paired Slack request",
+          { suggestionId: suggestion.id },
+        );
+        continue;
+      }
+      stats.eligible += 1;
 
       const response = await this.slackClient.postMessage(
-        this.config.copilotSlackDmId || this.config.copilotSlackUserId,
+        this.config.copilotSlackDmId,
         formatOutboundSuggestion(suggestion.content),
       );
       await this.stateStore.recordDelivery(suggestion.id, {
-        approvalEventId: replyApproval?.id || null,
-        approvalType: reactionApproval ? "reaction" : "reply",
+        sourceEventId: sourceEvent.id,
+        deliveryType: "automatic_private_reply",
         slackChannelId: response.channel,
         slackTimestamp: response.ts,
         deliveredAt: new Date().toISOString(),
       });
       stats.delivered += 1;
-      this.logger.info("Delivered approved copilot suggestion to Slack", {
+      this.logger.info("Delivered private copilot response to Slack", {
         suggestionId: suggestion.id,
-        approvalEventId: replyApproval?.id,
-        approvalType: reactionApproval ? "reaction" : "reply",
+        sourceEventId: sourceEvent.id,
       });
     }
 
     return stats;
   }
-
-  async hasApprovalReaction(eventId) {
-    if (!this.buzzClient.getReactions) return false;
-    const response = await this.buzzClient.getReactions(eventId);
-    return Boolean(
-      response.reactions?.some(
-        (reaction) =>
-          ["✅", "white_check_mark"].includes(reaction.emoji) &&
-          reaction.pubkeys?.includes(this.config.copilotApproverPubkey),
-      ),
-    );
-  }
 }
 
-export function isApproval(event, approverPubkey) {
-  return (
-    event?.pubkey === approverPubkey &&
-    event?.content?.trim().toLowerCase() === APPROVAL_COMMAND &&
-    Boolean(replyTarget(event.tags))
-  );
+export function isPairedSlackRequest(
+  event,
+  { humanPubkey, slackDmId },
+) {
+  if (!event || event.pubkey !== humanPubkey || !slackDmId) return false;
+  const escapedDmId = slackDmId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `https:\\/\\/[^\\s)]+\\/archives\\/${escapedDmId}\\/p\\d+`,
+    "i",
+  ).test(event.content || "");
 }
 
 export function replyTarget(tags = []) {
@@ -122,6 +116,6 @@ export function formatOutboundSuggestion(content) {
     "",
     content.trim(),
     "",
-    "_This was reviewed in Buzz before delivery. Reply here to continue privately with your copilot._",
+    "_Sent automatically from your private Buzz copilot. Reply here to continue the conversation._",
   ].join("\n");
 }

@@ -76,7 +76,8 @@ test("persists actor, audience ledger, and delivery receipts", async () => {
     memberUserIds: ["U1"],
   });
   await store.recordDelivery("suggestion-1", {
-    approvalEventId: "approval-1",
+    sourceEventId: "request-1",
+    deliveryType: "automatic_private_reply",
   });
 
   const reloaded = new JsonStateStore(statePath);
@@ -84,7 +85,7 @@ test("persists actor, audience ledger, and delivery receipts", async () => {
   assert.equal(reloaded.getActor("T1:U1").displayName, "Ada");
   assert.deepEqual(reloaded.getConversation("C1").memberUserIds, ["U1"]);
   assert.equal(
-    reloaded.getDelivery("suggestion-1").approvalEventId,
-    "approval-1",
+    reloaded.getDelivery("suggestion-1").sourceEventId,
+    "request-1",
   );
 });

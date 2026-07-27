@@ -3,7 +3,7 @@
 A small, dependency-free Node.js adapter that mirrors messages from one approved
 Slack channel into one private Buzz channel. It also includes an optional
 one-human copilot pilot with a dedicated Slack App Home DM, a private Buzz
-copilot channel, and owner-approved delivery back to Slack.
+copilot channel, and automatic private reply delivery back to Slack.
 
 This first milestone is intentionally narrow and testable:
 
@@ -16,7 +16,7 @@ This first milestone is intentionally narrow and testable:
 - stable Slack actor and audience metadata
 - a hard pre-persistence exclusion for human-to-human and multi-person DMs
 - a dedicated human-copilot inbox that mentions the configured Buzz agent
-- a separate worker that returns only cited, human-approved suggestions to Slack
+- a separate worker that returns only cited, paired private replies to Slack
 
 Slack remains the source of truth. The adapter publishes through the local
 `buzz` CLI, so it uses the same relay authentication model as other Buzz agents
@@ -68,7 +68,7 @@ the private channel through Buzz.
 For the pilot, create a second private stream channel for the copilot inbox:
 
 ```bash
-buzz --relay https://endcorp.communities.buzz.xyz channels create --name andrew-research-copilot --type stream --visibility private --description "Private review and approval queue for Andrew's Slack research copilot"
+buzz --relay https://endcorp.communities.buzz.xyz channels create --name andrew-research-copilot --type stream --visibility private --description "Private conversation for Andrew's Slack research copilot"
 ```
 
 Add Andrew and `Andrew's Research Copilot` to this channel after the
@@ -104,10 +104,10 @@ For the optional copilot route, also set:
 - `COPILOT_AGENT_NAME`: the exact Buzz display name; the adapter uses it as a
   real mention so the agent receives private requests
 
-For approved delivery back to Slack, set:
+For automatic private reply delivery back to Slack, set:
 
 - `COPILOT_AGENT_PUBKEY`: the saved copilot agent's Buzz public key
-- `COPILOT_APPROVER_PUBKEY`: the human reviewer allowed to approve delivery
+- `COPILOT_HUMAN_PUBKEY`: the paired human's Buzz public key
 
 Slack channel IDs can be copied from **View channel details → About**.
 
@@ -174,7 +174,7 @@ does not republish events already recorded in that file.
 
 ## 7. Run the personal copilot pilot
 
-Start the approved-delivery worker in a second terminal:
+Start the automatic-delivery worker in a second terminal:
 
 ```bash
 npm run copilot
@@ -187,15 +187,14 @@ The end-to-end loop is:
    request into the private Buzz copilot channel with a real agent mention.
 3. The research copilot answers in Buzz using permitted channel evidence and
    Slack source permalinks.
-4. The human reviews the suggestion and either reacts ✅ to it or replies
-   `/approve`.
-5. The separate delivery worker verifies the agent identity, approver identity,
-   citation, and durable delivery receipt before posting as **Buzz Copilot** in
-   the app DM.
+4. The separate delivery worker verifies that the configured agent replied to
+   a Slack-originated request from the paired Buzz human in the exact App Home
+   DM, checks the citation and durable delivery receipt, then posts as
+   **Buzz Copilot** in the app DM.
 
 The worker polls Buzz every ten seconds by default. It never posts as the human,
-never uses `chat:write.customize`, and never sends an uncited or unapproved
-suggestion.
+never uses `chat:write.customize`, and never sends an uncited, unpaired, or
+duplicate response.
 
 ## Supported behavior
 
@@ -211,8 +210,8 @@ suggestion.
 | Configured human → Buzz Copilot App DM | Mirrors into the private Buzz copilot inbox |
 | Any other one-to-one DM | Rejects before event receipt, storage, logging, or inference |
 | Any multi-person DM | Rejects before event receipt, storage, logging, or inference |
-| Cited copilot suggestion + human approval | Delivers once to the app DM |
-| Uncited, unapproved, or wrong-author suggestion | Does not deliver |
+| Cited agent reply to paired Slack copilot request | Delivers once to the app DM |
+| Uncited, unpaired, duplicate, or wrong-author response | Does not deliver |
 
 A live thread reply whose parent is not yet in state is published as a normal
 message. Run backfill before live mirroring so historical parents and replies are
@@ -228,7 +227,7 @@ npm run check
 Tests cover configuration redaction, event normalization, message formatting,
 durable state, stable actors, audience ledgers, Buzz CLI argument handling,
 idempotency, threads, edits, deletes, channel filtering, pre-storage DM
-exclusion, exact copilot routing, approval identity, citation enforcement,
+exclusion, exact copilot routing, paired-request identity, citation enforcement,
 delivery deduplication, and Socket Mode acknowledgement order.
 
 ## Security notes
@@ -246,8 +245,9 @@ delivery deduplication, and Socket Mode acknowledgement order.
   be promoted into shared findings without an explicit share action.
 - A private-channel ledger snapshots member IDs, and startup fails if the pilot
   human is not entitled to the configured private evidence channel.
-- Outbound delivery requires a known agent author, known human approver, a Slack
-  source permalink, and a durable once-only receipt.
+- Outbound delivery requires a known agent author, a reply to the paired
+  human's exact Slack App Home request, a Slack source permalink, and a durable
+  once-only receipt.
 - It does not download Slack files; file-only events mirror authenticated links.
 - The `buzz` process is spawned directly without a shell.
 - Runtime state is written with owner-only file permissions.

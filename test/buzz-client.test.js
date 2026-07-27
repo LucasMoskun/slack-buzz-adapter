@@ -31,7 +31,7 @@ test("publishes content over stdin without invoking a shell", async () => {
   });
 });
 
-test("reads a bounded copilot approval queue", async () => {
+test("reads a bounded copilot conversation", async () => {
   const calls = [];
   const client = new BuzzClient({
     executable: "/opt/buzz",
@@ -51,28 +51,5 @@ test("reads a bounded copilot approval queue", async () => {
     "copilot-channel",
     "--limit",
     "50",
-  ]);
-});
-
-test("reads approver reactions for a copilot suggestion", async () => {
-  const calls = [];
-  const client = new BuzzClient({
-    executable: "/opt/buzz",
-    runner: async (executable, args) => {
-      calls.push({ executable, args });
-      return JSON.stringify({
-        reactions: [{ emoji: "✅", count: 1, pubkeys: ["approver"] }],
-      });
-    },
-  });
-
-  const result = await client.getReactions("suggestion-1");
-
-  assert.equal(result.reactions[0].emoji, "✅");
-  assert.deepEqual(calls[0].args, [
-    "reactions",
-    "get",
-    "--event",
-    "suggestion-1",
   ]);
 });
