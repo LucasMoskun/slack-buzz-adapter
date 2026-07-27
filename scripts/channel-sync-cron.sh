@@ -13,7 +13,8 @@ mkdir -p "${project_dir}/.data"
 
 if ! (
   cd "${project_dir}"
-  /usr/bin/env npm run --silent sync-channels:cron
+  /usr/bin/env -u BUZZ_PRIVATE_KEY -u BUZZ_AUTH_TAG -u BUZZ_RELAY_URL \
+    npm run --silent sync-channels:cron
 ) >> "${log_path}" 2>&1; then
   print -r -- "$(date -u +%Y-%m-%dT%H:%M:%SZ) channel sync failed" >> "${log_path}"
   exit 1
@@ -24,7 +25,8 @@ applied_hash=$(/bin/cat "${applied_hash_path}" 2>/dev/null || true)
 if [[ "${mapping_hash}" != "${applied_hash}" ]]; then
   if ! (
     cd "${project_dir}"
-    /usr/bin/env npm run --silent refresh-live:cron
+    /usr/bin/env -u BUZZ_PRIVATE_KEY -u BUZZ_AUTH_TAG -u BUZZ_RELAY_URL \
+      npm run --silent refresh-live:cron
   ) >> "${log_path}" 2>&1; then
     print -r -- "$(date -u +%Y-%m-%dT%H:%M:%SZ) live refresh failed" >> "${log_path}"
     exit 1
