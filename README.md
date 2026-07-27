@@ -392,4 +392,6 @@ deduplication, and Socket Mode acknowledgement order.
 2. Edit/delete-driven invalidation of dependent copilot findings.
 3. Managed private-channel creation.
 4. Claimable Slack-source personas linked to real Buzz identities.
-5. A separate private `Signals` forum for cited cross-project analysis.
+5. A low-token, access-safe
+   [Signals swarm](./docs/ALWAYS_ON_SWARM_IMPLEMENTATION_PLAN.md) for cited
+   cross-project analysis.
