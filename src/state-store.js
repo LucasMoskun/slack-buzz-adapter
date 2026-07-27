@@ -1,4 +1,11 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 const EMPTY_STATE = Object.freeze({
@@ -12,6 +19,59 @@ export class JsonStateStore {
     this.filePath = filePath;
     this.maxEvents = maxEvents;
     this.state = structuredClone(EMPTY_STATE);
+    this.lockHandle = null;
+    this.lockPath = `${filePath}.lock`;
+  }
+
+  async acquireLock(owner = "adapter") {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    try {
+      await this.createLock(owner);
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      const lock = await this.readLock();
+      if (lock?.pid && !isProcessRunning(lock.pid)) {
+        await unlink(this.lockPath);
+        await this.createLock(owner);
+        return;
+      }
+      const details = lock
+        ? `${lock.owner || "another process"} (pid ${lock.pid || "unknown"})`
+        : "another process";
+      throw new Error(
+        `State is locked by ${details}. Stop the live adapter before running backfill.`,
+      );
+    }
+  }
+
+  async createLock(owner) {
+    this.lockHandle = await open(this.lockPath, "wx", 0o600);
+    await this.lockHandle.writeFile(
+      `${JSON.stringify({
+        pid: process.pid,
+        owner,
+        startedAt: new Date().toISOString(),
+      })}\n`,
+    );
+  }
+
+  async readLock() {
+    try {
+      return JSON.parse(await readFile(this.lockPath, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  async releaseLock() {
+    if (!this.lockHandle) return;
+    await this.lockHandle.close();
+    this.lockHandle = null;
+    try {
+      await unlink(this.lockPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   }
 
   async load() {
@@ -66,5 +126,14 @@ export class JsonStateStore {
     const content = `${JSON.stringify(this.state, null, 2)}\n`;
     await writeFile(temporaryPath, content, { mode: 0o600 });
     await rename(temporaryPath, this.filePath);
+  }
+}
+
+function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
   }
 }

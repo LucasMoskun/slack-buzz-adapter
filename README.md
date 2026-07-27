@@ -7,6 +7,7 @@ This first milestone is intentionally narrow and testable:
 
 - Slack Events API over Socket Mode
 - one explicit Slack channel → Buzz channel mapping
+- paginated historical backfill, including thread replies
 - new messages and known-parent thread replies
 - edits and deletion markers
 - durable event deduplication and Slack-to-Buzz message mapping
@@ -95,7 +96,33 @@ The doctor checks:
 
 It prints IDs and channel metadata, never token values.
 
-## 5. Start mirroring
+## 5. Backfill existing history
+
+Stop `npm start` if it is currently running, then run:
+
+```bash
+npm run backfill
+```
+
+By default this retrieves all history that the Slack app can access in the
+configured channel. It follows Slack cursor pagination, fetches thread replies,
+sorts messages oldest-first, and publishes them into the same Buzz channel.
+
+To set a lower bound, add an ISO-8601 date or Slack timestamp to `.env`:
+
+```bash
+BACKFILL_OLDEST=2026-01-01T00:00:00Z
+```
+
+The command reports fetched, created, already-existing, and ignored counts.
+Re-running it is safe: deterministic backfill event IDs plus the persistent
+Slack-to-Buzz message map prevent records already in state from being republished.
+
+The live adapter and backfill command intentionally share an exclusive state
+lock. If backfill reports that the state is locked, stop the live adapter with
+`Ctrl-C`, run the backfill, then restart live mirroring.
+
+## 6. Start mirroring
 
 ```bash
 npm start
@@ -113,6 +140,7 @@ does not republish events already recorded in that file.
 
 | Slack event | Buzz behavior |
 |---|---|
+| Historical message | Sends it oldest-first through `npm run backfill` |
 | New message | Sends a mirrored Buzz message |
 | Thread reply | Replies to the mirrored parent when the parent is in state |
 | Edit | Edits the existing mirrored Buzz message |
@@ -120,9 +148,9 @@ does not republish events already recorded in that file.
 | Duplicate event | Ignores it using the durable event receipt |
 | Different channel | Ignores it |
 
-A thread reply whose parent predates the adapter state is published as a normal
-message. Historical backfill is the next milestone and will remove that edge
-case.
+A live thread reply whose parent is not yet in state is published as a normal
+message. Run backfill before live mirroring so historical parents and replies are
+mapped first.
 
 ## Verification
 
@@ -148,10 +176,8 @@ channel filtering, and Socket Mode acknowledgement order.
 
 ## Next milestones
 
-1. Historical backfill with `conversations.history` and
-   `conversations.replies`.
-2. Multiple channel mappings in one workspace adapter.
-3. Automatic public-channel discovery and joining.
-4. Managed private-channel creation.
-5. Reactions, channel rename/archive handling, and coverage reporting.
-6. A separate private `Signals` forum for cited cross-project analysis.
+1. Multiple channel mappings in one workspace adapter.
+2. Automatic public-channel discovery and joining.
+3. Managed private-channel creation.
+4. Reactions, channel rename/archive handling, and coverage reporting.
+5. A separate private `Signals` forum for cited cross-project analysis.

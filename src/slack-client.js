@@ -11,32 +11,52 @@ export class SlackApiError extends Error {
 }
 
 export class SlackClient {
-  constructor({ botToken, appToken, fetchImpl = globalThis.fetch }) {
+  constructor({
+    botToken,
+    appToken,
+    fetchImpl = globalThis.fetch,
+    sleepImpl = (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    maxRateLimitRetries = 5,
+  }) {
     this.botToken = botToken;
     this.appToken = appToken;
     this.fetch = fetchImpl;
+    this.sleep = sleepImpl;
+    this.maxRateLimitRetries = maxRateLimitRetries;
     this.userCache = new Map();
   }
 
   async call(method, token, parameters = {}) {
-    const response = await this.fetch(`${SLACK_API_BASE}/${method}`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams(parameters),
-    });
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await this.fetch(`${SLACK_API_BASE}/${method}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(parameters),
+      });
 
-    if (!response.ok) {
-      throw new SlackApiError(method, `http_${response.status}`);
-    }
+      if (response.status === 429 && attempt < this.maxRateLimitRetries) {
+        const retrySeconds = Number(response.headers.get("retry-after"));
+        const delay = Number.isFinite(retrySeconds)
+          ? Math.max(1, retrySeconds) * 1000
+          : 1000 * 2 ** attempt;
+        await this.sleep(delay);
+        continue;
+      }
 
-    const body = await response.json();
-    if (!body.ok) {
-      throw new SlackApiError(method, body.error || "unknown_error", body);
+      if (!response.ok) {
+        throw new SlackApiError(method, `http_${response.status}`);
+      }
+
+      const body = await response.json();
+      if (!body.ok) {
+        throw new SlackApiError(method, body.error || "unknown_error", body);
+      }
+      return body;
     }
-    return body;
   }
 
   authTest() {
@@ -54,6 +74,33 @@ export class SlackClient {
     });
   }
 
+  channelHistory(channelId, { cursor, oldest, limit = 200 } = {}) {
+    return this.call(
+      "conversations.history",
+      this.botToken,
+      compactParameters({
+        channel: channelId,
+        cursor,
+        oldest,
+        limit: String(limit),
+      }),
+    );
+  }
+
+  threadReplies(channelId, timestamp, { cursor, oldest, limit = 200 } = {}) {
+    return this.call(
+      "conversations.replies",
+      this.botToken,
+      compactParameters({
+        channel: channelId,
+        ts: timestamp,
+        cursor,
+        oldest,
+        limit: String(limit),
+      }),
+    );
+  }
+
   async userDisplayName(userId) {
     if (!userId) return "Unknown user";
     if (this.userCache.has(userId)) return this.userCache.get(userId);
@@ -69,4 +116,10 @@ export class SlackClient {
     this.userCache.set(userId, name);
     return name;
   }
+}
+
+function compactParameters(parameters) {
+  return Object.fromEntries(
+    Object.entries(parameters).filter(([, value]) => value !== undefined),
+  );
 }

@@ -43,3 +43,20 @@ test("prunes the oldest event receipts", async () => {
   assert.equal(store.hasEvent("Ev2"), true);
   assert.equal(store.hasEvent("Ev3"), true);
 });
+
+test("prevents two processes from owning the same state path", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "slack-buzz-state-"));
+  const statePath = path.join(directory, "state.json");
+  const liveStore = new JsonStateStore(statePath);
+  const backfillStore = new JsonStateStore(statePath);
+
+  await liveStore.acquireLock("live adapter");
+  await assert.rejects(
+    () => backfillStore.acquireLock("history backfill"),
+    /locked by live adapter.*Stop the live adapter/,
+  );
+  await liveStore.releaseLock();
+
+  await backfillStore.acquireLock("history backfill");
+  await backfillStore.releaseLock();
+});

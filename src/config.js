@@ -23,6 +23,7 @@ export function loadConfig(env = process.env, cwd = process.cwd()) {
     statePath: path.resolve(cwd, env.STATE_PATH?.trim() || ".data/state.json"),
     adapterLabel: env.ADAPTER_LABEL?.trim() || "Slack mirror",
     logLevel: env.LOG_LEVEL?.trim() || "info",
+    backfillOldest: parseSlackTimestamp(env.BACKFILL_OLDEST),
   };
 }
 
@@ -34,5 +35,20 @@ export function redactConfig(config) {
     statePath: config.statePath,
     adapterLabel: config.adapterLabel,
     logLevel: config.logLevel,
+    backfillOldest: config.backfillOldest,
   };
+}
+
+export function parseSlackTimestamp(value) {
+  if (!value?.trim()) return undefined;
+  const candidate = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(candidate)) return candidate;
+
+  const milliseconds = Date.parse(candidate);
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error(
+      "BACKFILL_OLDEST must be an ISO-8601 date or Slack timestamp",
+    );
+  }
+  return (milliseconds / 1000).toFixed(6);
 }

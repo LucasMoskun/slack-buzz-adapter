@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadConfig, redactConfig } from "../src/config.js";
+import {
+  loadConfig,
+  parseSlackTimestamp,
+  redactConfig,
+} from "../src/config.js";
 
 const VALID_ENV = {
   SLACK_APP_TOKEN: "xapp-test",
@@ -25,4 +29,14 @@ test("redactConfig never includes Slack credentials", () => {
   assert.equal(redacted.buzzChannelId, "buzz-channel");
   assert.equal("slackAppToken" in redacted, false);
   assert.equal("slackBotToken" in redacted, false);
+});
+
+test("parses ISO dates and Slack timestamps for backfill", () => {
+  assert.equal(parseSlackTimestamp(undefined), undefined);
+  assert.equal(parseSlackTimestamp("1722070800.123456"), "1722070800.123456");
+  assert.equal(
+    parseSlackTimestamp("2026-07-27T00:00:00Z"),
+    "1785110400.000000",
+  );
+  assert.throws(() => parseSlackTimestamp("last Tuesday"), /BACKFILL_OLDEST/);
 });
