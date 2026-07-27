@@ -1,0 +1,16 @@
+{
+  "name": "slack-buzz-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mirror messages from one Slack channel into one private Buzz channel.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "doctor": "node --env-file-if-exists=.env src/doctor.js",
+    "test": "node --test",
+    "check": "node --check src/index.js && node --check src/doctor.js"
+  }
+}

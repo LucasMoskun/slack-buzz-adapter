@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { BuzzClient } from "../src/buzz-client.js";
+
+test("publishes content over stdin without invoking a shell", async () => {
+  const calls = [];
+  const client = new BuzzClient({
+    executable: "/opt/buzz",
+    runner: async (executable, args, options) => {
+      calls.push({ executable, args, options });
+      return JSON.stringify({ accepted: true, event_id: "a".repeat(64) });
+    },
+  });
+
+  const result = await client.sendMessage("channel-1", "hello\n\nworld", "parent");
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(calls[0], {
+    executable: "/opt/buzz",
+    args: [
+      "messages",
+      "send",
+      "--channel",
+      "channel-1",
+      "--content",
+      "-",
+      "--reply-to",
+      "parent",
+    ],
+    options: { input: "hello\n\nworld" },
+  });
+});
