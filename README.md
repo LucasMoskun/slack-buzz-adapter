@@ -10,6 +10,7 @@ The current milestone is explicit and testable:
 - Slack Events API over Socket Mode
 - an audited one-to-one Slack channel → Buzz channel mapping file
 - idempotent public-channel enrollment and private Buzz mirror creation
+- minutely reconciliation with hot route refresh and new-channel backfill
 - paginated historical backfill, including thread replies
 - new messages and known-parent thread replies
 - edits and deletion markers
@@ -92,7 +93,8 @@ For automatic private reply delivery back to Slack, set:
 Slack channel IDs can be copied from **View channel details → About**.
 
 Real credentials belong only in `.env`; that file and the runtime state directory
-are ignored by git.
+are ignored by git. `channel-mappings.json` is generated deployment state and is
+also ignored by git; do not commit workspace/channel IDs into the codebase.
 
 ## 3. Reconcile all source channels
 
@@ -107,7 +109,7 @@ This command:
 2. joins public channels that the app has not joined;
 3. creates one private Buzz stream for every unmapped Slack source;
 4. grants the configured human owner access and selected agents bot access; and
-5. atomically updates [`channel-mappings.json`](./channel-mappings.json).
+5. atomically updates the runtime-only `channel-mappings.json`.
 
 The mapping file routes by immutable IDs. Channel names are labels for review
 and are refreshed during reconciliation:
@@ -132,7 +134,28 @@ identical to their Slack source names on every reconciliation. On Slack Pro,
 uninvited private channels are not visible to the app; invite **Buzz Copilot**
 and rerun reconciliation.
 
-## 4. Validate both sides
+## 4. Install minutely reconciliation
+
+Install the managed crontab block:
+
+```bash
+/bin/zsh scripts/install-channel-sync-cron.sh
+```
+
+Every minute, the job:
+
+1. acquires an exclusive reconciliation lock;
+2. discovers Slack channels and updates the runtime-only mapping;
+3. joins new public channels and creates same-named private Buzz mirrors;
+4. repairs configured human/copilot membership;
+5. signals the live adapter only when the mapping hash changed; and
+6. hot-adds and backfills new routes inside the live adapter's state lock.
+
+The job writes its last successful run time to
+`.data/channel-sync-last-run`. It is quiet on unchanged successful runs and
+records failures or material changes in `.data/channel-sync-cron.log`.
+
+## 5. Validate both sides
 
 ```bash
 npm run doctor
@@ -150,7 +173,7 @@ The doctor checks:
 
 It prints IDs and channel metadata, never token values.
 
-## 5. Backfill existing history
+## 6. Backfill existing history
 
 Stop `npm start` if it is currently running, then run:
 
@@ -177,7 +200,7 @@ The live adapter and backfill command intentionally share an exclusive state
 lock. If backfill reports that the state is locked, stop the live adapter with
 `Ctrl-C`, run the backfill, then restart live mirroring.
 
-## 6. Start mirroring
+## 7. Start mirroring
 
 ```bash
 npm start
@@ -191,7 +214,7 @@ The adapter acknowledges Socket Mode envelopes before processing them. Delivery
 then runs serially and records state in `.data/state.json`. Restarting the process
 does not republish events already recorded in that file.
 
-## 7. Run the personal copilot pilot
+## 8. Run the personal copilot pilot
 
 Start the automatic-delivery worker in a second terminal:
 
@@ -279,11 +302,13 @@ deduplication, and Socket Mode acknowledgement order.
   destinations.
 - Public enrollment is explicit through reconciliation. Private sources remain
   Slack invitation-only and cannot be silently claimed as covered.
+- The mapping contains deployment-specific channel IDs, is mode `0600` at
+  runtime, and is excluded from git.
 
 ## Next milestones
 
 1. Membership change and private-channel revocation events.
 2. Edit/delete-driven invalidation of dependent copilot findings.
-3. Automatic reconciliation after public channel creation.
-4. Managed private-channel creation.
+3. Managed private-channel creation.
+4. Claimable Slack-source personas linked to real Buzz identities.
 5. A separate private `Signals` forum for cited cross-project analysis.

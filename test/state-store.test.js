@@ -53,7 +53,7 @@ test("prevents two processes from owning the same state path", async () => {
   await liveStore.acquireLock("live adapter");
   await assert.rejects(
     () => backfillStore.acquireLock("history backfill"),
-    /locked by live adapter.*Stop the live adapter/,
+    /locked by live adapter/,
   );
   await liveStore.releaseLock();
 

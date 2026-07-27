@@ -32,6 +32,15 @@ export function loadConfig(
     channelMappingsBySlackId: mappingIndex(channelMappings),
     buzzCli: env.BUZZ_CLI?.trim() || "buzz",
     statePath: path.resolve(cwd, env.STATE_PATH?.trim() || ".data/state.json"),
+    syncStatePath: path.resolve(
+      cwd,
+      env.SYNC_STATE_PATH?.trim() || ".data/channel-sync-state.json",
+    ),
+    routeRefreshHashPath: path.resolve(
+      cwd,
+      env.ROUTE_REFRESH_HASH_PATH?.trim() ||
+        ".data/channel-sync-applied-hash",
+    ),
     adapterLabel: env.ADAPTER_LABEL?.trim() || "Slack mirror",
     logLevel: env.LOG_LEVEL?.trim() || "info",
     backfillOldest: parseSlackTimestamp(env.BACKFILL_OLDEST),
@@ -93,6 +102,8 @@ export function redactConfig(config) {
     ),
     buzzCli: config.buzzCli,
     statePath: config.statePath,
+    syncStatePath: config.syncStatePath,
+    routeRefreshHashPath: config.routeRefreshHashPath,
     adapterLabel: config.adapterLabel,
     logLevel: config.logLevel,
     backfillOldest: config.backfillOldest,

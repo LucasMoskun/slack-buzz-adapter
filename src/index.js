@@ -6,6 +6,10 @@ import { createLogger } from "./logger.js";
 import { SlackClient } from "./slack-client.js";
 import { SlackSocketMode } from "./socket-mode.js";
 import { JsonStateStore } from "./state-store.js";
+import {
+  recordAppliedMappingHash,
+  refreshChannelRoutes,
+} from "./route-refresh-service.js";
 
 async function main() {
   const config = loadConfig();
@@ -66,6 +70,23 @@ async function main() {
       workspaceId: auth.team_id,
       channelRoutes,
     });
+    recordAppliedMappingHash(
+      runtimeConfig.channelMappingsPath,
+      runtimeConfig.routeRefreshHashPath,
+    );
+    const refreshRoutes = () =>
+      adapter.enqueueTask(async () => {
+        const stats = await refreshChannelRoutes({
+          config: runtimeConfig,
+          adapter,
+          slackClient,
+          buzzClient,
+          stateStore,
+          workspaceId: auth.team_id,
+          logger,
+        });
+        logger.info("Channel routes refreshed", stats);
+      }, "Channel route refresh failed");
 
     const socketMode = new SlackSocketMode({
       slackClient,
@@ -79,6 +100,7 @@ async function main() {
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
+    process.on("SIGHUP", refreshRoutes);
 
     logger.info("Adapter ready", {
       slackWorkspace: auth.team,

@@ -41,9 +41,7 @@ export class JsonStateStore {
       const details = lock
         ? `${lock.owner || "another process"} (pid ${lock.pid || "unknown"})`
         : "another process";
-      throw new Error(
-        `State is locked by ${details}. Stop the live adapter before running backfill.`,
-      );
+      throw new Error(`State is locked by ${details}.`);
     }
   }
 

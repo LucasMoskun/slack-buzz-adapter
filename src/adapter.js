@@ -29,22 +29,38 @@ export class SlackBuzzAdapter {
     this.logger = logger;
     this.workspaceUrl = workspaceUrl;
     this.workspaceId = workspaceId;
-    this.channelRoutes = new Map(
-      channelRoutes.map((route) => [route.slackChannelId, route]),
-    );
+    this.setChannelRoutes(channelRoutes);
     this.queue = Promise.resolve();
   }
 
-  enqueue(payload) {
+  setChannelRoutes(channelRoutes) {
+    this.channelRoutes = new Map(
+      channelRoutes.map((route) => [route.slackChannelId, route]),
+    );
+  }
+
+  enqueueTask(
+    task,
+    failureMessage = "Adapter task failed",
+    metadata = {},
+  ) {
     this.queue = this.queue
-      .then(() => this.processPayload(payload))
+      .then(task)
       .catch((error) => {
-        this.logger.error("Slack event processing failed", {
+        this.logger.error(failureMessage, {
+          ...metadata,
           error: error.message,
-          eventId: payload?.event_id,
         });
       });
     return this.queue;
+  }
+
+  enqueue(payload) {
+    return this.enqueueTask(
+      () => this.processPayload(payload),
+      "Slack event processing failed",
+      { eventId: payload?.event_id },
+    );
   }
 
   async processPayload(payload) {

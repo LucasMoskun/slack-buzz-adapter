@@ -1,5 +1,6 @@
 .env
 .data/
+channel-mappings.json
 node_modules/
 npm-debug.log*
 .DS_Store
