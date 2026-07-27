@@ -210,6 +210,22 @@ test("ignores messages from unmapped Slack channels", async () => {
   assert.equal(stateStore.hasEvent("EvOther"), true);
 });
 
+test("serial task queue recovers after a task rejects", async () => {
+  const { adapter } = await createHarness();
+
+  await assert.rejects(
+    () =>
+      adapter.runExclusive(async () => {
+        throw new Error("task failed");
+      }),
+    /task failed/,
+  );
+  assert.equal(
+    await adapter.runExclusive(async () => "continued"),
+    "continued",
+  );
+});
+
 test("excludes other DMs before state or message persistence", async () => {
   const { adapter, sends, stateStore } = await createHarness({
     copilotSlackUserId: "U1",

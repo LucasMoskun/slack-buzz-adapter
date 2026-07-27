@@ -134,33 +134,26 @@ identical to their Slack source names on every reconciliation. On Slack Pro,
 uninvited private channels are not visible to the app; invite **Buzz Copilot**
 and rerun reconciliation.
 
-## 4. Install minutely reconciliation
+## 4. Internal minutely reconciliation
 
-Install the managed crontab block:
+The long-running adapter runs reconciliation internally every 60 seconds. No
+cron entry, LaunchAgent, or second reconciliation process is required. Set
+`CHANNEL_SYNC_INTERVAL_MS` only when a different interval is needed.
 
-```bash
-/bin/zsh scripts/install-channel-sync-cron.sh
-```
-
-On macOS, if the calling process is not allowed to update `crontab`, install
-the equivalent native 60-second LaunchAgent:
-
-```bash
-/bin/zsh scripts/install-channel-sync-launchd.sh
-```
-
-Every minute, the job:
+Every cycle:
 
 1. acquires an exclusive reconciliation lock;
 2. discovers Slack channels and updates the runtime-only mapping;
 3. joins new public channels and creates same-named private Buzz mirrors;
 4. repairs configured human/copilot membership;
-5. signals the live adapter only when the mapping hash changed; and
-6. hot-adds and backfills new routes inside the live adapter's state lock.
+5. compares the generated mapping with the routes applied in memory; and
+6. serializes any route update with live messages, then backfills only newly
+   added routes.
 
-The job writes its last successful run time to
-`.data/channel-sync-last-run`. It is quiet on unchanged successful runs and
-records failures or material changes in `.data/channel-sync-cron.log`.
+Cycles never overlap: the next timer is scheduled only after the current cycle
+finishes. Failures are logged and retried by the same live process on the next
+cycle. `npm run sync-channels` remains available as an explicit one-shot
+administrative command and uses the same reconciliation lock.
 
 ## 5. Validate both sides
 

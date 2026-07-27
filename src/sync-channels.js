@@ -6,18 +6,15 @@ import { SlackClient } from "./slack-client.js";
 import { JsonStateStore } from "./state-store.js";
 
 async function main() {
-  const cronMode = process.argv.includes("--cron");
   const config = loadConfig(process.env, process.cwd(), {
     allowMissingMappings: true,
   });
-  const logger = createLogger(cronMode ? "warn" : config.logLevel);
-  if (!cronMode) {
-    logger.info("Reconciling Slack and Buzz channel mappings", {
-      ...redactConfig(config),
-      mirrorOwnerConfigured: Boolean(config.mirrorOwnerPubkey),
-      mirrorAgentCount: config.mirrorAgentPubkeys.length,
-    });
-  }
+  const logger = createLogger(config.logLevel);
+  logger.info("Reconciling Slack and Buzz channel mappings", {
+    ...redactConfig(config),
+    mirrorOwnerConfigured: Boolean(config.mirrorOwnerPubkey),
+    mirrorAgentCount: config.mirrorAgentPubkeys.length,
+  });
 
   const slackClient = new SlackClient({
     botToken: config.slackBotToken,
@@ -34,21 +31,19 @@ async function main() {
       buzzClient,
       logger,
     });
-    const changes =
-      stats.joinedPublicChannels +
-      stats.createdBuzzChannels +
-      stats.renamedBuzzChannels;
-    if (!cronMode || changes > 0) {
-      const report = {
-        ok: true,
-        slackWorkspace: auth.team,
-        slackWorkspaceId: auth.team_id,
-        mappingFile: config.channelMappingsPath,
-        ...stats,
-      };
-      if (cronMode) delete report.channels;
-      console.log(JSON.stringify(report, null, cronMode ? 0 : 2));
-    }
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          slackWorkspace: auth.team,
+          slackWorkspaceId: auth.team_id,
+          mappingFile: config.channelMappingsPath,
+          ...stats,
+        },
+        null,
+        2,
+      ),
+    );
   } finally {
     await syncStateStore.releaseLock();
   }

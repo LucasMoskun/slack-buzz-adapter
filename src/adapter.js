@@ -44,15 +44,23 @@ export class SlackBuzzAdapter {
     failureMessage = "Adapter task failed",
     metadata = {},
   ) {
-    this.queue = this.queue
-      .then(task)
+    return this.runExclusive(task).catch((error) => {
+      this.logger.error(failureMessage, {
+        ...metadata,
+        error: error.message,
+      });
+    });
+  }
+
+  runExclusive(task) {
+    const result = this.queue.then(task);
+    this.queue = result
       .catch((error) => {
-        this.logger.error(failureMessage, {
-          ...metadata,
+        this.logger.debug("Adapter queue recovered after task failure", {
           error: error.message,
         });
       });
-    return this.queue;
+    return result;
   }
 
   enqueue(payload) {

@@ -43,6 +43,7 @@ test("redactConfig never includes Slack credentials", () => {
 
   assert.equal(redacted.channelMappings[0].slackChannelId, "C123");
   assert.equal(redacted.channelMappings[0].buzzChannelId, "buzz-channel");
+  assert.equal(redacted.channelSyncIntervalMs, 60_000);
   assert.equal("slackAppToken" in redacted, false);
   assert.equal("slackBotToken" in redacted, false);
 });

@@ -41,6 +41,11 @@ export function loadConfig(
       env.ROUTE_REFRESH_HASH_PATH?.trim() ||
         ".data/channel-sync-applied-hash",
     ),
+    channelSyncIntervalMs: parsePositiveInteger(
+      env.CHANNEL_SYNC_INTERVAL_MS,
+      60_000,
+      "CHANNEL_SYNC_INTERVAL_MS",
+    ),
     adapterLabel: env.ADAPTER_LABEL?.trim() || "Slack mirror",
     logLevel: env.LOG_LEVEL?.trim() || "info",
     backfillOldest: parseSlackTimestamp(env.BACKFILL_OLDEST),
@@ -104,6 +109,7 @@ export function redactConfig(config) {
     statePath: config.statePath,
     syncStatePath: config.syncStatePath,
     routeRefreshHashPath: config.routeRefreshHashPath,
+    channelSyncIntervalMs: config.channelSyncIntervalMs,
     adapterLabel: config.adapterLabel,
     logLevel: config.logLevel,
     backfillOldest: config.backfillOldest,

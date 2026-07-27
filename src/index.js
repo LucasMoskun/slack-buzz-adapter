@@ -1,5 +1,9 @@
 import { SlackBuzzAdapter } from "./adapter.js";
 import { BuzzClient } from "./buzz-client.js";
+import {
+  InternalReconciliationLoop,
+  runChannelReconciliation,
+} from "./channel-reconciler.js";
 import { resolveChannelRoutes } from "./channel-routes.js";
 import { loadConfig, redactConfig } from "./config.js";
 import { createLogger } from "./logger.js";
@@ -8,7 +12,6 @@ import { SlackSocketMode } from "./socket-mode.js";
 import { JsonStateStore } from "./state-store.js";
 import {
   recordAppliedMappingHash,
-  refreshChannelRoutes,
 } from "./route-refresh-service.js";
 
 async function main() {
@@ -74,9 +77,11 @@ async function main() {
       runtimeConfig.channelMappingsPath,
       runtimeConfig.routeRefreshHashPath,
     );
-    const refreshRoutes = () =>
-      adapter.enqueueTask(async () => {
-        const stats = await refreshChannelRoutes({
+    const reconciliationLoop = new InternalReconciliationLoop({
+      intervalMs: runtimeConfig.channelSyncIntervalMs,
+      logger,
+      task: () =>
+        runChannelReconciliation({
           config: runtimeConfig,
           adapter,
           slackClient,
@@ -84,9 +89,8 @@ async function main() {
           stateStore,
           workspaceId: auth.team_id,
           logger,
-        });
-        logger.info("Channel routes refreshed", stats);
-      }, "Channel route refresh failed");
+        }),
+    });
 
     const socketMode = new SlackSocketMode({
       slackClient,
@@ -96,16 +100,18 @@ async function main() {
 
     const stop = () => {
       logger.info("Stopping Slack to Buzz adapter");
+      reconciliationLoop.stop();
       socketMode.stop();
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
-    process.on("SIGHUP", refreshRoutes);
 
     logger.info("Adapter ready", {
       slackWorkspace: auth.team,
       mappedChannels: channelRoutes.length,
+      channelSyncIntervalMs: runtimeConfig.channelSyncIntervalMs,
     });
+    reconciliationLoop.start();
     await socketMode.start();
   } finally {
     await stateStore.releaseLock();
