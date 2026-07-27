@@ -46,15 +46,18 @@ scopes. Socket Mode means no public webhook endpoint is required.
 Run this with the Buzz identity that should publish mirrored messages:
 
 ```bash
-buzz channels create \
-  --name slack-demo-mirror \
-  --type stream \
-  --visibility private \
-  --description "Read-only mirror of the Slack demo channel"
+buzz --relay https://endcorp.communities.buzz.xyz channels create --name slack-demo-mirror --type stream --visibility private --description "Read-only mirror of the Slack demo channel"
 ```
 
 Save the returned `channel_id`. Add Andrew and any selected analysis agents to
 the private channel through Buzz.
+
+The relay flag is intentionally explicit. Without it (or a configured
+`BUZZ_RELAY_URL`), the CLI defaults to the local development relay at
+`http://localhost:3000`.
+
+The CLI also requires `BUZZ_PRIVATE_KEY` in the terminal environment. Keep that
+key local and never paste it into Slack, Buzz, issue reports, or command output.
 
 ## 3. Configure the adapter
 
