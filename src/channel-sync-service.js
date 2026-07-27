@@ -44,15 +44,16 @@ export async function syncChannelMappings({
   const mappings = [...config.channelMappings];
   const bySlackId = mappingIndex(mappings);
   let createdBuzzChannels = 0;
+  let renamedBuzzChannels = 0;
   let retainedMappings = 0;
 
   for (const channel of discovered) {
+    const sourceName = channel.name || channel.id;
     let mapping = bySlackId.get(channel.id);
     if (!mapping) {
-      const buzzName = `slack-${channel.name || channel.id}`.slice(0, 80);
       const result = await buzzClient.createPrivateChannel(
-        buzzName,
-        `Read-only mirror of Slack #${channel.name || channel.id}`,
+        sourceName,
+        `Read-only mirror of Slack #${sourceName}`,
       );
       if (!result.channel_id) {
         throw new Error(
@@ -61,9 +62,9 @@ export async function syncChannelMappings({
       }
       mapping = {
         slackChannelId: channel.id,
-        slackChannelName: channel.name || channel.id,
+        slackChannelName: sourceName,
         buzzChannelId: result.channel_id,
-        buzzChannelName: buzzName,
+        buzzChannelName: sourceName,
       };
       mappings.push(mapping);
       bySlackId.set(channel.id, mapping);
@@ -77,8 +78,21 @@ export async function syncChannelMappings({
           `The Buzz publishing identity cannot access mapped channel ${mapping.buzzChannelId}`,
         );
       }
-      mapping.slackChannelName = channel.name || mapping.slackChannelName;
-      mapping.buzzChannelName = buzzChannel.name || mapping.buzzChannelName;
+      if (buzzChannel.name !== sourceName) {
+        await buzzClient.updateChannelName(
+          mapping.buzzChannelId,
+          sourceName,
+        );
+        renamedBuzzChannels += 1;
+        logger?.info("Renamed Buzz mirror to match Slack source", {
+          slackChannelId: channel.id,
+          slackChannelName: sourceName,
+          buzzChannelId: mapping.buzzChannelId,
+          previousBuzzChannelName: buzzChannel.name,
+        });
+      }
+      mapping.slackChannelName = sourceName;
+      mapping.buzzChannelName = sourceName;
       retainedMappings += 1;
     }
 
@@ -98,6 +112,7 @@ export async function syncChannelMappings({
       .length,
     joinedPublicChannels,
     createdBuzzChannels,
+    renamedBuzzChannels,
     retainedMappings,
     totalMappings: mappings.length,
     channels: mappings,

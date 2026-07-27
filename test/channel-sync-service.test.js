@@ -73,6 +73,10 @@ test("joins public sources and creates one private Buzz channel per source", asy
       memberships.set(channelId, []);
       return { channel_id: channelId };
     },
+    async updateChannelName(channelId, name) {
+      calls.push(["rename", channelId, name]);
+      return { accepted: true };
+    },
     async channelMembers(channelId) {
       return memberships.get(channelId) ?? [];
     },
@@ -98,12 +102,33 @@ test("joins public sources and creates one private Buzz channel per source", asy
   assert.equal(stats.discoveredChannels, 3);
   assert.equal(stats.joinedPublicChannels, 1);
   assert.equal(stats.createdBuzzChannels, 2);
+  assert.equal(stats.renamedBuzzChannels, 1);
   const mappings = loadChannelMappings(mappingPath);
   assert.equal(mappings.length, 3);
   assert.equal(
     mappings.find((mapping) => mapping.slackChannelId === "C1")
       .slackChannelName,
     "existing-renamed",
+  );
+  assert.equal(
+    mappings.find((mapping) => mapping.slackChannelId === "C1")
+      .buzzChannelName,
+    "existing-renamed",
+  );
+  assert.ok(
+    calls.some(
+      (call) =>
+        call[0] === "create" &&
+        call[1] === "new-public",
+    ),
+  );
+  assert.ok(
+    calls.some(
+      (call) =>
+        call[0] === "rename" &&
+        call[1] === "buzz-1" &&
+        call[2] === "existing-renamed",
+    ),
   );
   assert.equal(
     memberships.get("buzz-2").find((member) => member.pubkey === OWNER)
@@ -129,4 +154,3 @@ test("requires an explicit human owner before creating mirrors", async () => {
     /MIRROR_OWNER_PUBKEY/,
   );
 });
-

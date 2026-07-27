@@ -73,6 +73,18 @@ export class BuzzClient {
     return JSON.parse(output);
   }
 
+  async updateChannelName(channelId, name) {
+    const output = await this.runner(this.executable, [
+      "channels",
+      "update",
+      "--channel",
+      channelId,
+      "--name",
+      name,
+    ]);
+    return JSON.parse(output);
+  }
+
   async channelMembers(channelId) {
     const output = await this.runner(this.executable, [
       "channels",

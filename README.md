@@ -120,16 +120,17 @@ and are refreshed during reconciliation:
       "slackChannelId": "C0123456789",
       "slackChannelName": "project-alpha",
       "buzzChannelId": "00000000-0000-0000-0000-000000000000",
-      "buzzChannelName": "slack-project-alpha"
+      "buzzChannelName": "project-alpha"
     }
   ]
 }
 ```
 
 Duplicate Slack IDs or duplicate Buzz destinations are rejected. Unmapped
-channels are ignored by the live event processor. On Slack Pro, uninvited
-private channels are not visible to the app; invite **Buzz Copilot** and rerun
-reconciliation.
+channels are ignored by the live event processor. Buzz mirror names are kept
+identical to their Slack source names on every reconciliation. On Slack Pro,
+uninvited private channels are not visible to the app; invite **Buzz Copilot**
+and rerun reconciliation.
 
 ## 4. Validate both sides
 

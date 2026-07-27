@@ -58,6 +58,7 @@ test("creates private mirror channels and manages their members", async () => {
   const calls = [];
   const responses = [
     { accepted: true, channel_id: "buzz-1" },
+    { accepted: true },
     [{ pubkey: "a".repeat(64), role: "owner" }],
     { accepted: true },
   ];
@@ -69,9 +70,10 @@ test("creates private mirror channels and manages their members", async () => {
   });
 
   const created = await client.createPrivateChannel(
-    "slack-alpha",
+    "alpha",
     "Read-only mirror",
   );
+  await client.updateChannelName("buzz-1", "alpha-renamed");
   const members = await client.channelMembers("buzz-1");
   await client.addChannelMember(
     "buzz-1",
@@ -85,7 +87,7 @@ test("creates private mirror channels and manages their members", async () => {
     "channels",
     "create",
     "--name",
-    "slack-alpha",
+    "alpha",
     "--type",
     "stream",
     "--visibility",
@@ -93,7 +95,15 @@ test("creates private mirror channels and manages their members", async () => {
     "--description",
     "Read-only mirror",
   ]);
-  assert.deepEqual(calls[2].args, [
+  assert.deepEqual(calls[1].args, [
+    "channels",
+    "update",
+    "--channel",
+    "buzz-1",
+    "--name",
+    "alpha-renamed",
+  ]);
+  assert.deepEqual(calls[3].args, [
     "channels",
     "add-member",
     "--channel",
