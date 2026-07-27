@@ -16,6 +16,6 @@
     "copilot": "node --env-file-if-exists=.env src/copilot.js",
     "doctor": "node --env-file-if-exists=.env src/doctor.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/sync-channels.js && node --check src/signal-refresh.js && node --check src/backfill.js && node --check src/copilot.js && node --check src/doctor.js && /bin/zsh -n scripts/channel-sync-cron.sh scripts/install-channel-sync-cron.sh"
+    "check": "node --check src/index.js && node --check src/sync-channels.js && node --check src/signal-refresh.js && node --check src/backfill.js && node --check src/copilot.js && node --check src/doctor.js && /bin/zsh -n scripts/channel-sync-cron.sh scripts/install-channel-sync-cron.sh scripts/install-channel-sync-launchd.sh"
   }
 }

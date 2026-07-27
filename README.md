@@ -142,6 +142,13 @@ Install the managed crontab block:
 /bin/zsh scripts/install-channel-sync-cron.sh
 ```
 
+On macOS, if the calling process is not allowed to update `crontab`, install
+the equivalent native 60-second LaunchAgent:
+
+```bash
+/bin/zsh scripts/install-channel-sync-launchd.sh
+```
+
 Every minute, the job:
 
 1. acquires an exclusive reconciliation lock;
