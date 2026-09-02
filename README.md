@@ -199,6 +199,12 @@ Set:
 
 - `SLACK_APP_TOKEN`: the `xapp-…` Socket Mode token
 - `SLACK_BOT_TOKEN`: the `xoxb-…` bot token
+- `SLACK_ALLOWED_CHANNEL_IDS`: required comma-separated stable Slack channel
+  IDs; every unlisted channel is denied before join or mirror creation
+- `SLACK_DENIED_CHANNEL_NAMES`: optional normalized-name denylist used as
+  defense in depth; stable IDs remain the authorization boundary
+- `BUZZ_CHANNEL_PREFIX`: optional prefix for created and reconciled Buzz
+  channel names; defaults to empty for compatibility
 - `CHANNEL_MAPPINGS_PATH`: the JSON mapping path; defaults to
   `channel-mappings.json`
 - `BUZZ_RELAY_URL`: the Buzz relay URL
@@ -223,6 +229,10 @@ For automatic private reply delivery back to Slack, set:
 - `COPILOT_HUMAN_PUBKEY`: the paired human's Buzz public key
 
 Slack channel IDs can be copied from **View channel details → About**.
+
+Reconciliation fails if an existing mapping falls outside the allowlist. This
+is intentional: remove or explicitly re-authorize the mapping rather than
+allowing stale access to continue silently.
 
 Real credentials belong only in `.env`; that file and the runtime state
 directory are ignored by git. `channel-mappings.json` is generated deployment

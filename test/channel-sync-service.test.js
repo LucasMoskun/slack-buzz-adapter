@@ -91,6 +91,9 @@ test("joins public sources and creates one private Buzz channel per source", asy
     config: {
       channelMappingsPath: mappingPath,
       channelMappings: loadChannelMappings(mappingPath),
+      slackAllowedChannelIds: ["C1", "C2", "G1"],
+      slackDeniedChannelNames: [],
+      buzzChannelPrefix: "mlf-",
       mirrorOwnerPubkey: OWNER,
       mirrorAgentPubkeys: [AGENT],
     },
@@ -113,13 +116,13 @@ test("joins public sources and creates one private Buzz channel per source", asy
   assert.equal(
     mappings.find((mapping) => mapping.slackChannelId === "C1")
       .buzzChannelName,
-    "existing-renamed",
+    "mlf-existing-renamed",
   );
   assert.ok(
     calls.some(
       (call) =>
         call[0] === "create" &&
-        call[1] === "new-public",
+        call[1] === "mlf-new-public",
     ),
   );
   assert.ok(
@@ -127,7 +130,7 @@ test("joins public sources and creates one private Buzz channel per source", asy
       (call) =>
         call[0] === "rename" &&
         call[1] === "buzz-1" &&
-        call[2] === "existing-renamed",
+        call[2] === "mlf-existing-renamed",
     ),
   );
   assert.equal(
@@ -139,6 +142,58 @@ test("joins public sources and creates one private Buzz channel per source", asy
     memberships.get("buzz-2").find((member) => member.pubkey === AGENT)
       .role,
     "bot",
+  );
+});
+
+test("never joins or mirrors channels outside the explicit allowlist", async () => {
+  const calls = [];
+  const stats = await syncChannelMappings({
+    config: {
+      channelMappingsPath: path.join(
+        mkdtempSync(path.join(os.tmpdir(), "slack-buzz-allowlist-")),
+        "channel-mappings.json",
+      ),
+      channelMappings: [],
+      slackAllowedChannelIds: ["C1"],
+      slackDeniedChannelNames: ["partners"],
+      mirrorOwnerPubkey: OWNER,
+      mirrorAgentPubkeys: [],
+    },
+    slackClient: {
+      async listConversations() {
+        return [
+          { id: "C1", name: "Partners", is_private: false, is_member: false },
+          { id: "C2", name: "general", is_private: false, is_member: false },
+        ];
+      },
+      async joinChannel(channelId) {
+        calls.push(["join", channelId]);
+      },
+    },
+    buzzClient: {
+      async createPrivateChannel(name) {
+        calls.push(["create", name]);
+        return { channel_id: "unexpected" };
+      },
+    },
+  });
+
+  assert.equal(stats.discoveredChannels, 0);
+  assert.deepEqual(calls, []);
+});
+
+test("fails closed when an existing mapping leaves the allowlist", async () => {
+  await assert.rejects(
+    () =>
+      syncChannelMappings({
+        config: {
+          channelMappings: [{ slackChannelId: "C2" }],
+          slackAllowedChannelIds: ["C1"],
+          mirrorOwnerPubkey: OWNER,
+          mirrorAgentPubkeys: [],
+        },
+      }),
+    /Existing mappings are outside SLACK_ALLOWED_CHANNEL_IDS: C2/,
   );
 });
 

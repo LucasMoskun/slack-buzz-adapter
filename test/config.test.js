@@ -12,6 +12,7 @@ import {
 const VALID_ENV = {
   SLACK_APP_TOKEN: "xapp-test",
   SLACK_BOT_TOKEN: "xoxb-test",
+  SLACK_ALLOWED_CHANNEL_IDS: "C123,G456,C123",
   BUZZ_PRIVATE_KEY: "nsec-test",
 };
 const PROJECT = mkdtempSync(path.join(os.tmpdir(), "slack-buzz-config-"));
@@ -44,8 +45,46 @@ test("redactConfig never includes Slack credentials", () => {
   assert.equal(redacted.channelMappings[0].slackChannelId, "C123");
   assert.equal(redacted.channelMappings[0].buzzChannelId, "buzz-channel");
   assert.equal(redacted.channelSyncIntervalMs, 60_000);
+  assert.deepEqual(redacted.slackAllowedChannelIds, ["C123", "G456"]);
   assert.equal("slackAppToken" in redacted, false);
   assert.equal("slackBotToken" in redacted, false);
+});
+
+test("requires and validates a stable Slack channel allowlist", () => {
+  assert.throws(
+    () => loadConfig({ ...VALID_ENV, SLACK_ALLOWED_CHANNEL_IDS: "" }, PROJECT),
+    /SLACK_ALLOWED_CHANNEL_IDS/,
+  );
+  assert.throws(
+    () => loadConfig({ ...VALID_ENV, SLACK_ALLOWED_CHANNEL_IDS: "general" }, PROJECT),
+    /stable Slack channel IDs/,
+  );
+
+  const config = loadConfig(
+    {
+      ...VALID_ENV,
+      SLACK_DENIED_CHANNEL_NAMES: "Partners, Board Meeting, finance-leads",
+    },
+    PROJECT,
+  );
+  assert.deepEqual(config.slackDeniedChannelNames, [
+    "partners",
+    "board-meeting",
+    "finance-leads",
+  ]);
+});
+
+test("loads a whitespace-free optional Buzz channel prefix", () => {
+  assert.equal(loadConfig(VALID_ENV, PROJECT).buzzChannelPrefix, "");
+  assert.equal(
+    loadConfig({ ...VALID_ENV, BUZZ_CHANNEL_PREFIX: "mlf-" }, PROJECT)
+      .buzzChannelPrefix,
+    "mlf-",
+  );
+  assert.throws(
+    () => loadConfig({ ...VALID_ENV, BUZZ_CHANNEL_PREFIX: "mlf " }, PROJECT),
+    /must not contain whitespace/,
+  );
 });
 
 test("parses ISO dates and Slack timestamps for backfill", () => {

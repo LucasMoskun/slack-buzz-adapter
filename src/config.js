@@ -4,6 +4,7 @@ import { loadChannelMappings, mappingIndex } from "./channel-map.js";
 const REQUIRED_ENV = [
   "SLACK_APP_TOKEN",
   "SLACK_BOT_TOKEN",
+  "SLACK_ALLOWED_CHANNEL_IDS",
   "BUZZ_PRIVATE_KEY",
 ];
 
@@ -27,6 +28,14 @@ export function loadConfig(
   const config = {
     slackAppToken: env.SLACK_APP_TOKEN.trim(),
     slackBotToken: env.SLACK_BOT_TOKEN.trim(),
+    slackAllowedChannelIds: parseSlackChannelIds(
+      env.SLACK_ALLOWED_CHANNEL_IDS,
+      "SLACK_ALLOWED_CHANNEL_IDS",
+    ),
+    slackDeniedChannelNames: parseNormalizedNameList(
+      env.SLACK_DENIED_CHANNEL_NAMES,
+    ),
+    buzzChannelPrefix: parseChannelPrefix(env.BUZZ_CHANNEL_PREFIX),
     channelMappingsPath,
     channelMappings,
     channelMappingsBySlackId: mappingIndex(channelMappings),
@@ -105,6 +114,9 @@ export function redactConfig(config) {
         buzzChannelName,
       }),
     ),
+    slackAllowedChannelIds: config.slackAllowedChannelIds,
+    slackDeniedChannelNames: config.slackDeniedChannelNames,
+    buzzChannelPrefix: config.buzzChannelPrefix,
     buzzCli: config.buzzCli,
     statePath: config.statePath,
     syncStatePath: config.syncStatePath,
@@ -168,4 +180,51 @@ function parseOptionalPubkey(value, name) {
     throw new Error(`${name} must be a 64-character hex pubkey`);
   }
   return value;
+}
+
+function parseSlackChannelIds(value, name) {
+  const values = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  for (const channelId of values) {
+    if (!/^[CG][A-Z0-9]+$/.test(channelId)) {
+      throw new Error(
+        `${name} must contain comma-separated stable Slack channel IDs`,
+      );
+    }
+  }
+  if (values.length === 0) {
+    throw new Error(`${name} must contain at least one Slack channel ID`);
+  }
+  return [...new Set(values)];
+}
+
+function parseNormalizedNameList(value) {
+  if (!value?.trim()) return [];
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((entry) => normalizeSlackChannelName(entry))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function normalizeSlackChannelName(value) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function parseChannelPrefix(value) {
+  if (!value) return "";
+  const prefix = value.trim();
+  if (prefix !== value || /\s/.test(prefix)) {
+    throw new Error("BUZZ_CHANNEL_PREFIX must not contain whitespace");
+  }
+  return prefix;
 }

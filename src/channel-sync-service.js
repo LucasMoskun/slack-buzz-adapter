@@ -15,10 +15,30 @@ export async function syncChannelMappings({
     );
   }
 
+  const allowedChannelIds = new Set(config.slackAllowedChannelIds ?? []);
+  if (allowedChannelIds.size === 0) {
+    throw new Error(
+      "SLACK_ALLOWED_CHANNEL_IDS must contain at least one channel before reconciliation",
+    );
+  }
+  const deniedChannelNames = new Set(config.slackDeniedChannelNames ?? []);
+  const disallowedMappings = config.channelMappings.filter(
+    (mapping) => !allowedChannelIds.has(mapping.slackChannelId),
+  );
+  if (disallowedMappings.length > 0) {
+    throw new Error(
+      `Existing mappings are outside SLACK_ALLOWED_CHANNEL_IDS: ${disallowedMappings
+        .map((mapping) => mapping.slackChannelId)
+        .join(", ")}`,
+    );
+  }
+
   const discovered = (await slackClient.listConversations())
     .filter(
       (channel) =>
         channel.id &&
+        allowedChannelIds.has(channel.id) &&
+        !deniedChannelNames.has(normalizeSlackChannelName(channel.name)) &&
         !channel.is_archived &&
         !channel.is_im &&
         !channel.is_mpim,
@@ -49,10 +69,11 @@ export async function syncChannelMappings({
 
   for (const channel of discovered) {
     const sourceName = channel.name || channel.id;
+    const buzzName = `${config.buzzChannelPrefix ?? ""}${sourceName}`;
     let mapping = bySlackId.get(channel.id);
     if (!mapping) {
       const result = await buzzClient.createPrivateChannel(
-        sourceName,
+        buzzName,
         `Read-only mirror of Slack #${sourceName}`,
       );
       if (!result.channel_id) {
@@ -64,7 +85,7 @@ export async function syncChannelMappings({
         slackChannelId: channel.id,
         slackChannelName: sourceName,
         buzzChannelId: result.channel_id,
-        buzzChannelName: sourceName,
+        buzzChannelName: buzzName,
       };
       mappings.push(mapping);
       bySlackId.set(channel.id, mapping);
@@ -78,10 +99,10 @@ export async function syncChannelMappings({
           `The Buzz publishing identity cannot access mapped channel ${mapping.buzzChannelId}`,
         );
       }
-      if (buzzChannel.name !== sourceName) {
+      if (buzzChannel.name !== buzzName) {
         await buzzClient.updateChannelName(
           mapping.buzzChannelId,
-          sourceName,
+          buzzName,
         );
         renamedBuzzChannels += 1;
         logger?.info("Renamed Buzz mirror to match Slack source", {
@@ -89,10 +110,11 @@ export async function syncChannelMappings({
           slackChannelName: sourceName,
           buzzChannelId: mapping.buzzChannelId,
           previousBuzzChannelName: buzzChannel.name,
+          buzzChannelName: buzzName,
         });
       }
       mapping.slackChannelName = sourceName;
-      mapping.buzzChannelName = sourceName;
+      mapping.buzzChannelName = buzzName;
       retainedMappings += 1;
     }
 
@@ -117,6 +139,14 @@ export async function syncChannelMappings({
     totalMappings: mappings.length,
     channels: mappings,
   };
+}
+
+function normalizeSlackChannelName(value = "") {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 async function ensureMirrorMembers({

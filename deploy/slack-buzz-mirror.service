@@ -1,0 +1,36 @@
+[Unit]
+Description=Slack to Buzz one-way mirror
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=slack-buzz-mirror
+Group=slack-buzz-mirror
+WorkingDirectory=/var/lib/slack-buzz-mirror
+EnvironmentFile=/etc/slack-buzz-mirror/env
+ExecStart=/usr/bin/node --env-file=/etc/slack-buzz-mirror/env /opt/slack-buzz-mirror/app/src/index.js
+Restart=on-failure
+RestartSec=30
+StateDirectory=slack-buzz-mirror
+StateDirectoryMode=0750
+MemoryMax=256M
+CPUQuota=25%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/slack-buzz-mirror
+
+# MemoryDenyWriteExecute is intentionally omitted: Node/V8 JIT requires it.
+
+[Install]
+WantedBy=multi-user.target
