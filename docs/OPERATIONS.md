@@ -2,6 +2,16 @@
 
 The service is a one-way, derived mirror. Slack remains the source of truth.
 
+## Host prerequisites
+
+- Node.js 22 or newer available as `/usr/bin/node`.
+- Buzz CLI installed and available on `PATH`.
+- `rsync`, `npm`, systemd, and standard Linux account-management tools.
+
+The installer validates Node and Buzz before changing service files. Install a
+supported Node runtime through the host's approved package-management process;
+do not pipe an unaudited remote setup script into a privileged shell.
+
 ## Health and logs
 
 ```bash
