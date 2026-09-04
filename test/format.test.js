@@ -4,6 +4,7 @@ import {
   formatDeletedMessage,
   formatCopilotMessage,
   formatMirroredMessage,
+  neutralizeAtMentions,
   normalizeSlackMessage,
   slackPermalink,
   sourceKey,
@@ -99,4 +100,26 @@ test("labels copilot inbox context as personal and non-shareable", () => {
   assert.match(content, /@Ada's Research Copilot/);
   assert.match(content, /Private request/);
   assert.match(content, /do not promote into shared findings/);
+});
+
+test("neutralizes literal @names so the Buzz CLI never resolves them", () => {
+  const zw = "\u200b";
+  assert.equal(neutralizeAtMentions("@mully can you look?"), `@${zw}mully can you look?`);
+  assert.equal(
+    neutralizeAtMentions("ping @mully and\n@ada.l please"),
+    `ping @${zw}mully and\n@${zw}ada.l please`,
+  );
+  assert.equal(neutralizeAtMentions("mail user@example.com"), "mail user@example.com");
+  assert.equal(neutralizeAtMentions("<@U0123ABC> hi"), "<@U0123ABC> hi");
+  assert.equal(neutralizeAtMentions("hello @ world"), "hello @ world");
+  assert.equal(neutralizeAtMentions(""), "");
+  assert.equal(neutralizeAtMentions(undefined), undefined);
+
+  const content = formatMirroredMessage({
+    adapterLabel: "Slack mirror",
+    author: "Ada",
+    channelName: "demo",
+    message: { ts: "1722070800.123456", text: "@mully see thread" },
+  });
+  assert.match(content, new RegExp(`@${zw}mully see thread`));
 });

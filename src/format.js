@@ -55,7 +55,9 @@ export function formatMirroredMessage({
   const time = Number.isFinite(timestampMs)
     ? new Date(timestampMs).toISOString()
     : "unknown time";
-  const text = message.text?.trim() || describeFiles(message.files);
+  const text = neutralizeAtMentions(
+    message.text?.trim() || describeFiles(message.files),
+  );
   const source = permalink ? ` · [open in Slack](${permalink})` : "";
 
   return [
@@ -76,7 +78,9 @@ export function formatCopilotMessage({
   const time = Number.isFinite(timestampMs)
     ? new Date(timestampMs).toISOString()
     : "unknown time";
-  const text = message.text?.trim() || describeFiles(message.files);
+  const text = neutralizeAtMentions(
+    message.text?.trim() || describeFiles(message.files),
+  );
   const source = permalink ? ` · [open in Slack](${permalink})` : "";
 
   return [
@@ -88,6 +92,27 @@ export function formatCopilotMessage({
     "",
     "_Personal context: do not promote into shared findings without an explicit share action._",
   ].join("\n");
+}
+
+const ZERO_WIDTH_SPACE = "\u200b";
+
+/**
+ * Stop literal `@name` text from Slack being treated as a Buzz mention.
+ *
+ * The Buzz CLI resolves `@name` tokens (an `@` at start-of-string or after
+ * ASCII whitespace, followed by `[A-Za-z0-9._-]`) against channel members and
+ * refuses to send when a name does not match one. Mirrored Slack text is
+ * quoted evidence, not a request for anyone's attention, so a zero-width
+ * space is inserted after the `@`. Readers still see `@name`; the CLI and
+ * client-side highlighters no longer see a mention. Slack's own structured
+ * mentions (`<@U…>`) are untouched because their `@` follows `<`.
+ */
+export function neutralizeAtMentions(text) {
+  if (!text || !text.includes("@")) return text;
+  return text.replace(
+    /(^|[ \t\r\n\f\v])@(?=[A-Za-z0-9._-])/g,
+    `$1@${ZERO_WIDTH_SPACE}`,
+  );
 }
 
 function describeFiles(files) {
